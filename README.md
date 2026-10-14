@@ -32,8 +32,10 @@ All connectors write the same `ContentDocument` shape into **`content_scraper.po
 - **Media / taxonomy:** `cover_image_url`, `media_urls`, `tags`, `categories`, `audience`
 - **Timestamps:** `published_at`, `updated_at`, `scraped_at`
 - **Engagement:** `word_count`, `reaction_count`, `comment_count`
-- **Extras:** `metadata`, `raw` (full source payload)
+- **Extras:** `metadata` (source-specific fields; keep lean)
 - **Vector hooks:** `embedding_status`, `embedding_id`, `embedding_model`
+
+Empty / null fields are stripped on write. Only filled values land in MongoDB.
 
 ## Prerequisites
 
@@ -148,32 +150,185 @@ Paywalled posts may return truncated body content depending on Substack’s publ
 
 ## Adding a connector
 
-1. Create `src/scraper/connectors/<name>.py`
-2. Subclass `BaseConnector`, set `name`, implement `scrape()` yielding `ContentDocument`
-3. Decorate with `@register_connector`
-4. Import the module from `connectors/__init__.py` so it registers
+Every source (Medium, RSS, Reddit, …) is a **connector**: fetch source-specific data, normalize to `ContentDocument`, yield. The pipeline and Mongo layer stay untouched.
+
+### Contract
+
+| Piece | Requirement |
+|-------|-------------|
+| Class | Subclass `BaseConnector` |
+| `name` | Unique lowercase string (becomes CLI name + Mongo `source`) |
+| `description` | Short human string (shown in `scraper connectors`) |
+| `scrape()` | Generator yielding `ContentDocument` |
+| Config | Read `self.config` (`source_id`, `limit`, `offset`, `fetch_full_content`, `extras`) |
+| Registration | `@register_connector` + import in `connectors/__init__.py` |
+
+Reference implementation: `src/scraper/connectors/substack.py`.
+
+### Checklist
+
+1. **Create** `src/scraper/connectors/<name>.py`
+2. **Implement** fetch + map → `ContentDocument` (see field guide below)
+3. **Register** with `@register_connector`
+4. **Import** the module in `src/scraper/connectors/__init__.py` (side-effect registration)
+5. **Test** mapping / URL helpers under `tests/`
+6. **Run** `scraper connectors` (your name should appear) then `scraper scrape <name> <source_id> --limit 2`
+7. **Optional Makefile** target, e.g. `scrape-<name>`
+
+### Minimal example
 
 ```python
+# src/scraper/connectors/example_rss.py
+# Copyright (c) 2026 DevRev Inc. All rights reserved.
+
+from __future__ import annotations
+
+from collections.abc import Iterator
+from datetime import datetime, timezone
+
+import httpx
+
+from scraper.config import get_settings
 from scraper.connectors.base import BaseConnector
 from scraper.connectors.registry import register_connector
-from scraper.models.document import ContentDocument
+from scraper.models.document import Author, ContentDocument
+
 
 @register_connector
-class MyConnector(BaseConnector):
-    name = "my_source"
-    description = "..."
+class ExampleRssConnector(BaseConnector):
+    name = "example_rss"
+    description = "Scrape posts from a public RSS/Atom feed URL"
 
-    def scrape(self):
-        yield ContentDocument(
-            source=self.name,
-            external_id="...",
-            title="...",
-            content="...",
-            embed_url="...",
-            author=...,
-            metadata={...},
-        )
+    def validate_config(self) -> None:
+        super().validate_config()
+        if not self.config.source_id.startswith(("http://", "https://")):
+            raise ValueError("source_id must be a feed URL")
+
+    def scrape(self) -> Iterator[ContentDocument]:
+        settings = get_settings()
+        # Replace with real RSS parsing (feedparser, etc.)
+        # Here we illustrate the ContentDocument shape only.
+        yielded = 0
+        with httpx.Client(
+            timeout=settings.http_timeout_seconds,
+            headers={"User-Agent": settings.http_user_agent},
+            follow_redirects=True,
+        ) as client:
+            _ = client.get(self.config.source_id)  # fetch feed…
+            # for each item in feed:
+            doc = ContentDocument(
+                source=self.name,
+                external_id="unique-stable-id",  # REQUIRED: stable across runs
+                url="https://example.com/article",
+                title="Article title",
+                content="Full plain-text body…",
+                content_html="<p>Full HTML body…</p>",
+                content_text="Full plain-text body…",
+                summary="Short teaser",
+                author=Author(name="Jane Doe"),
+                published_at=datetime.now(timezone.utc),
+                categories=["example"],
+                metadata={"feed_url": self.config.source_id},
+            )
+            yield doc
+            yielded += 1
+            if self.config.limit is not None and yielded >= self.config.limit:
+                return
 ```
+
+Register it:
+
+```python
+# src/scraper/connectors/__init__.py
+from scraper.connectors import substack as _substack  # noqa: F401
+from scraper.connectors import example_rss as _example_rss  # noqa: F401
+```
+
+Use it:
+
+```bash
+scraper connectors
+scraper scrape example_rss https://example.com/feed.xml --limit 5
+scraper list-docs --source example_rss -n 5
+```
+
+### Field guide (`ContentDocument`)
+
+**Required for a useful row**
+
+| Field | Notes |
+|-------|--------|
+| `source` | Must equal `self.name` |
+| `external_id` | Stable unique id within that source (post id, guid, slug). Used for upserts |
+| `title` | Display title |
+| Prefer at least one of | `content` / `content_text` / `content_html` (full article for embeddings) |
+
+**Strongly recommended**
+
+| Field | Notes |
+|-------|--------|
+| `url` / `canonical_url` | Permalink |
+| `embed_url` | If the platform has an embeddable URL |
+| `author` | `Author(name=…)` at minimum |
+| `published_at` | Timezone-aware `datetime` |
+| `summary` | Short teaser when full body is huge or paywalled |
+| `categories` / `tags` | For filtering later |
+
+**Optional / source-specific**
+
+| Field | Notes |
+|-------|--------|
+| `metadata` | Small dict only (slug, feed url, is_paid, …). Do **not** dump entire API responses |
+| `raw` | Available on the model but **not persisted** to Mongo |
+| `embedding_*` | Leave defaults; vector pipeline fills later |
+
+`to_mongo()` drops nulls/blanks — only set fields you have.
+
+### Config knobs (`ConnectorConfig`)
+
+| Attr | Use |
+|------|-----|
+| `source_id` | Whatever your connector needs (URL, handle, channel id) |
+| `limit` / `offset` | Pagination / “latest N” |
+| `fetch_full_content` | Skip expensive detail fetches when `False` |
+| `extras` | Free-form dict for connector-specific options |
+
+Override `validate_config()` to fail fast on bad `source_id`.
+
+### Conventions
+
+- **Be polite:** respect `settings.request_delay_seconds` between requests; set a clear `User-Agent`.
+- **Retries:** use `tenacity` (see Substack connector) for transient HTTP failures.
+- **Idempotent upserts:** same `(source, external_id)` overwrites; never invent random ids per run.
+- **Full article when possible:** recommendation/embedding work needs `content` / `content_html`, not teasers alone.
+- **Paywalls / ToS:** only scrape what the source allows publicly; document limitations in the connector docstring.
+- **No publication-only rows:** store articles/posts. Discovery helpers (like Substack leaderboards) should resolve to scrape targets, not Mongo blog cards.
+
+### Optional: discovery helpers
+
+If your source has a “trending” or directory API, add `src/scraper/discovery/<name>.py` that returns lightweight targets (see `BlogTarget` in `discovery/substack.py`), then wire a CLI command that loops `run_scrape("<connector>", target_id, …)`. Keep discovery out of the `posts` collection.
+
+### Tests
+
+Add focused unit tests (no network) for URL parsing and document mapping:
+
+```python
+# tests/test_example_rss.py
+from scraper.connectors import get_connector, list_connectors
+from scraper.connectors.base import ConnectorConfig
+
+def test_registered():
+    assert "example_rss" in {c["name"] for c in list_connectors()}
+
+def test_validate_rejects_non_url():
+    try:
+        get_connector("example_rss", ConnectorConfig(source_id="not-a-url"))
+        assert False, "expected ValueError"
+    except ValueError:
+        pass
+```
+
+Run: `make test` / `make lint`.
 
 ## Project layout
 
@@ -191,10 +346,12 @@ class MyConnector(BaseConnector):
     ├── pipeline.py
     ├── models/document.py     # ContentDocument schema
     ├── storage/mongodb.py
+    ├── discovery/
+    │   └── substack.py        # blog targets for discover→scrape
     └── connectors/
-        ├── base.py
+        ├── base.py            # BaseConnector + ConnectorConfig
         ├── registry.py
-        └── substack.py
+        └── substack.py        # reference connector
 ```
 
 ## Roadmap (later)
