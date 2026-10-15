@@ -50,7 +50,6 @@ export default defineConfig({
   resolve: {
     alias: {
       '@': path.resolve(import.meta.dirname, 'src'),
-      '@workspace/aura-shared': path.resolve(import.meta.dirname, 'src/lib/aura-shared'),
       '@assets': path.resolve(
         import.meta.dirname,
         '..',

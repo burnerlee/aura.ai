@@ -11,13 +11,12 @@
     "moduleResolution": "bundler",
     "types": ["node", "vite/client"],
     "paths": {
-      "@/*": ["./src/*"],
-      "@workspace/aura-shared": ["./src/lib/aura-shared/index.ts"]
+      "@/*": ["./src/*"]
     }
   },
   "references": [
     {
-      "path": "../../lib/api-client-react"
+      "path": "../../lib/aura-shared"
     }
   ]
 }
