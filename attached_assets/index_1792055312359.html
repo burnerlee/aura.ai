@@ -1,0 +1,566 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Aura - Natural Language Social Feed</title>
+    
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <script src="https://unpkg.com/@phosphor-icons/web"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    fontFamily: { sans: ['Inter', 'sans-serif'] },
+                    colors: {
+                        background: '#020203',
+                        cat1: '#22d3ee', // Cyberpunk - Cyan
+                        cat2: '#f43f5e', // Indie Pop - Rose
+                        cat3: '#a855f7', // AI/ML - Purple
+                        cat4: '#f59e0b', // Space - Amber
+                    },
+                    animation: {
+                        'float': 'float 6s ease-in-out infinite',
+                        'pulse-glow': 'pulse-glow 2s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+                        'slide-up': 'slide-up 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards',
+                    },
+                    keyframes: {
+                        'float': {
+                            '0%, 100%': { transform: 'translateY(0) rotateX(10deg) rotateY(-10deg)' },
+                            '50%': { transform: 'translateY(-10px) rotateX(15deg) rotateY(-5deg)' }
+                        },
+                        'pulse-glow': {
+                            '0%, 100%': { opacity: 1, transform: 'scale(1)' },
+                            '50%': { opacity: .8, transform: 'scale(1.05)' }
+                        },
+                        'slide-up': {
+                            '0%': { opacity: 0, transform: 'translateY(20px)' },
+                            '100%': { opacity: 1, transform: 'translateY(0)' }
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    
+    <style>
+        body { margin: 0; overflow-x: hidden; background-color: #020203; color: #fff; scroll-behavior: smooth; }
+        
+        .glass-panel {
+            background: rgba(15, 15, 20, 0.6);
+            backdrop-filter: blur(40px);
+            -webkit-backdrop-filter: blur(40px);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            box-shadow: 0 30px 60px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.1);
+        }
+
+        .glass-badge {
+            background: rgba(0, 0, 0, 0.5);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .chart-container { perspective: 1000px; }
+        .chart-svg {
+            transform-style: preserve-3d;
+            filter: drop-shadow(0 0 20px rgba(255,255,255,0.15));
+        }
+        .chart-circle {
+            fill: none;
+            stroke-width: 22;
+            stroke-linecap: round;
+            transition: stroke-dasharray 0.8s cubic-bezier(0.16, 1, 0.3, 1), 
+                        stroke-dashoffset 0.8s cubic-bezier(0.16, 1, 0.3, 1);
+            filter: drop-shadow(0 0 8px currentColor);
+        }
+        
+        .chart-pulse { animation: pulse-hit 0.5s ease-out; }
+        @keyframes pulse-hit {
+            0% { transform: scale(1); filter: brightness(1); }
+            50% { transform: scale(1.15); filter: brightness(1.5) drop-shadow(0 0 40px rgba(255,255,255,0.6)); }
+            100% { transform: scale(1); filter: brightness(1); }
+        }
+
+        .card-gesturable {
+            touch-action: pan-y;
+            transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.4s cubic-bezier(0.16, 1, 0.3, 1), filter 0.4s, border-color 0.4s;
+            user-select: none;
+            -webkit-user-select: none;
+        }
+        
+        .card-positive {
+            transform: translateX(12px) rotate(1deg) scale(1.02);
+            box-shadow: 0 0 50px var(--glow-color), inset 0 0 30px var(--glow-color) !important;
+            border-color: var(--glow-color) !important;
+        }
+        
+        @keyframes violent-shake {
+            0%, 100% { transform: translateX(-12px) rotate(-1deg) scale(0.98); }
+            25% { transform: translateX(-16px) rotate(-2deg) scale(0.98); }
+            50% { transform: translateX(-8px) rotate(0deg) scale(0.98); }
+            75% { transform: translateX(-16px) rotate(-2deg) scale(0.98); }
+        }
+        
+        .card-negative {
+            animation: violent-shake 0.15s infinite;
+            box-shadow: 0 0 50px rgba(239, 68, 68, 0.6), inset 0 0 30px rgba(239, 68, 68, 0.4) !important;
+            border-color: rgba(239, 68, 68, 0.8) !important;
+            filter: grayscale(80%) contrast(120%) !important;
+        }
+
+        .is-banished {
+            transform: scale(0.8) translateY(50px);
+            opacity: 0;
+            pointer-events: none;
+            transition: all 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+
+        #particle-canvas {
+            position: fixed;
+            top: 0; left: 0; width: 100vw; height: 100vh;
+            pointer-events: none;
+            z-index: 9999;
+        }
+        
+        .cinematic-img { transition: transform 3s cubic-bezier(0.16, 1, 0.3, 1); }
+        .group:hover .cinematic-img { transform: scale(1.05); }
+
+        .masonry-grid {
+            column-count: 1;
+            column-gap: 1.5rem;
+        }
+        @media (min-width: 768px) { .masonry-grid { column-count: 2; } }
+        @media (min-width: 1024px) { .masonry-grid { column-count: 3; } }
+        
+        .masonry-item {
+            break-inside: avoid;
+            margin-bottom: 1.5rem;
+        }
+
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+    </style>
+</head>
+<body class="antialiased selection:bg-cat3 selection:text-white">
+
+    <canvas id="particle-canvas"></canvas>
+
+    <!-- Floating Navbar with Natural Language Trigger -->
+    <nav class="fixed top-0 left-0 w-full z-40 bg-gradient-to-b from-background via-background/90 to-transparent pt-6 pb-12 px-8 flex justify-between items-center">
+        <div class="flex items-center space-x-3">
+            <div class="w-10 h-10 md:w-12 md:h-12 rounded-full bg-gradient-to-br from-cat3 to-cat1 flex items-center justify-center shadow-[0_0_30px_rgba(168,85,247,0.5)]">
+                <i class="ph-bold ph-sparkle text-white text-lg md:text-xl"></i>
+            </div>
+            <h1 class="text-2xl md:text-3xl font-extrabold tracking-tighter">Aura</h1>
+        </div>
+
+        <!-- Center Natural Language Interest Prompt Pill -->
+        <div class="hidden lg:flex items-center space-x-2 glass-panel px-4 py-2 rounded-full cursor-pointer hover:border-cat3/50 transition-all group" onclick="openIntentModal()">
+            <i class="ph-fill ph-brain text-cat3 text-lg group-hover:scale-110 transition-transform"></i>
+            <span id="current-intent-preview" class="text-xs text-white/80 font-medium max-w-xs truncate">"Cyberpunk, Machine Learning & Deep Tech"</span>
+            <span class="bg-white/10 text-[10px] px-2 py-0.5 rounded-full text-white/60 group-hover:text-white">Edit Vibe</span>
+        </div>
+
+        <div class="flex items-center space-x-3">
+            <button onclick="openCreatorModal()" class="glass-badge px-4 py-2.5 rounded-full flex items-center space-x-2 hover:bg-white/10 transition-all border-cat3/30 text-cat3 hover:scale-105">
+                <i class="ph-bold ph-plus text-sm"></i>
+                <span class="text-xs font-semibold tracking-wide">Create / Embed</span>
+            </button>
+            <div class="w-10 h-10 md:w-12 md:h-12 rounded-full glass-badge flex items-center justify-center">
+                <i class="ph ph-user text-lg md:text-xl"></i>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Interest DNA Sidebar (Desktop) -->
+    <aside class="fixed right-6 top-1/2 -translate-y-1/2 w-[300px] glass-panel rounded-[32px] p-6 z-30 hidden xl:flex flex-col items-center">
+        <div class="w-full text-center mb-6">
+            <h2 class="text-sm font-bold text-white tracking-widest flex items-center justify-center">
+                <i class="ph-fill ph-dna mr-2 text-cat3 text-lg"></i> INTEREST DNA
+            </h2>
+            <p class="text-[11px] text-white/50 mt-1">Real-time vector alignment</p>
+        </div>
+
+        <div class="chart-container w-full h-48 flex justify-center items-center relative mb-6" id="chart-container">
+            <svg viewBox="0 0 200 200" class="w-full h-full chart-svg animate-float overflow-visible" id="dna-chart">
+                <circle cx="100" cy="100" r="75" fill="none" stroke="rgba(255,255,255,0.03)" stroke-width="22" />
+            </svg>
+            <div class="absolute inset-0 flex items-center justify-center pointer-events-none">
+                <div class="w-12 h-12 rounded-full bg-black/80 backdrop-blur-xl border border-white/10 flex items-center justify-center shadow-[0_0_40px_rgba(0,0,0,1)_inset]">
+                    <i class="ph-fill ph-brain text-white/40 text-lg animate-pulse"></i>
+                </div>
+            </div>
+        </div>
+
+        <div class="w-full space-y-2.5" id="chart-legend"></div>
+    </aside>
+
+    <!-- Main Content Feed -->
+    <main class="relative z-10 w-full min-h-screen pt-32 pb-32 px-4 md:px-8 xl:pr-[340px]">
+        <div class="w-full max-w-[1400px] mx-auto masonry-grid" id="feed-container"></div>
+    </main>
+
+    <!-- Natural Language Prompt Modal -->
+    <div id="intent-modal" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-md hidden flex items-center justify-center p-4">
+        <div class="glass-panel w-full max-w-lg rounded-[28px] p-6 md:p-8 animate-slide-up relative">
+            <button onclick="closeIntentModal()" class="absolute top-6 right-6 text-white/50 hover:text-white"><i class="ph-bold ph-x text-lg"></i></button>
+            <div class="flex items-center space-x-3 mb-4">
+                <div class="w-10 h-10 rounded-full bg-cat3/20 flex items-center justify-center text-cat3"><i class="ph-fill ph-brain text-xl"></i></div>
+                <h3 class="text-xl font-bold">Define Your Feed DNA</h3>
+            </div>
+            <p class="text-xs text-white/60 mb-6">Describe what you want to see or avoid in plain natural language. Our embedding model will automatically recalibrate your interest vectors.</p>
+            <textarea id="intent-input" rows="4" class="w-full bg-black/40 border border-white/10 rounded-2xl p-4 text-sm text-white focus:outline-none focus:border-cat3 resize-none mb-6" placeholder="e.g., Focus heavily on generative AI breakthroughs, indie sci-fi game design, and ambient synth music. Completely filter out corporate finance."></textarea>
+            <div class="flex justify-end space-x-3">
+                <button onclick="closeIntentModal()" class="px-5 py-2.5 rounded-full text-xs font-semibold glass-badge hover:bg-white/10 transition-colors">Cancel</button>
+                <button onclick="saveNewIntent()" class="px-6 py-2.5 rounded-full text-xs font-semibold bg-gradient-to-r from-cat3 to-cat1 text-black font-bold hover:opacity-90 transition-opacity">Recalibrate Feed</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Create / Embed Omnibox Modal -->
+    <div id="creator-modal" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-md hidden flex items-center justify-center p-4">
+        <div class="glass-panel w-full max-w-xl rounded-[28px] p-6 md:p-8 animate-slide-up relative">
+            <button onclick="closeCreatorModal()" class="absolute top-6 right-6 text-white/50 hover:text-white"><i class="ph-bold ph-x text-lg"></i></button>
+            <div class="flex items-center space-x-3 mb-6">
+                <div class="w-10 h-10 rounded-full bg-cat1/20 flex items-center justify-center text-cat1"><i class="ph-fill ph-plus-circle text-xl"></i></div>
+                <h3 class="text-xl font-bold">Create or Embed Post</h3>
+            </div>
+
+            <!-- Tabs -->
+            <div class="flex space-x-2 bg-black/40 p-1.5 rounded-2xl mb-6 border border-white/5">
+                <button onclick="switchTab('short')" id="tab-short" class="flex-1 py-2 rounded-xl text-xs font-bold bg-white/10 text-white transition-all">Short Form</button>
+                <button onclick="switchTab('long')" id="tab-long" class="flex-1 py-2 rounded-xl text-xs font-bold text-white/50 hover:text-white transition-all">Long Form</button>
+                <button onclick="switchTab('embed')" id="tab-embed" class="flex-1 py-2 rounded-xl text-xs font-bold text-white/50 hover:text-white transition-all">Embed Link</button>
+            </div>
+
+            <!-- Form Content -->
+            <div id="form-short" class="space-y-4">
+                <select id="post-cat" class="w-full bg-black/40 border border-white/10 rounded-xl p-3 text-xs text-white focus:outline-none focus:border-cat1">
+                    <option value="cat1">Cyberpunk Aesthetics</option>
+                    <option value="cat3">Machine Learning</option>
+                    <option value="cat4">Astrophysics</option>
+                    <option value="cat2">Indie Pop Audio</option>
+                </select>
+                <textarea id="short-text" rows="3" class="w-full bg-black/40 border border-white/10 rounded-2xl p-4 text-sm text-white focus:outline-none focus:border-cat1 resize-none" placeholder="Share a quick thought or code snippet..."></textarea>
+            </div>
+
+            <div id="form-long" class="space-y-4 hidden">
+                <input type="text" id="long-title" placeholder="Article Title" class="w-full bg-black/40 border border-white/10 rounded-xl p-3 text-xs text-white focus:outline-none focus:border-cat1">
+                <textarea id="long-content" rows="5" class="w-full bg-black/40 border border-white/10 rounded-2xl p-4 text-sm text-white focus:outline-none focus:border-cat1 resize-none" placeholder="Write long-form markdown content..."></textarea>
+            </div>
+
+            <div id="form-embed" class="space-y-4 hidden">
+                <select id="embed-platform" class="w-full bg-black/40 border border-white/10 rounded-xl p-3 text-xs text-white focus:outline-none focus:border-cat1">
+                    <option value="Substack">Substack Article</option>
+                    <option value="Twitter">Twitter / X Thread</option>
+                    <option value="Reddit">Reddit Discussion</option>
+                </select>
+                <input type="text" id="embed-url" placeholder="Paste Post URL (e.g., https://substack.com/...)" class="w-full bg-black/40 border border-white/10 rounded-xl p-3 text-xs text-white focus:outline-none focus:border-cat1">
+                <input type="text" id="embed-headline" placeholder="Custom Headline or Summary" class="w-full bg-black/40 border border-white/10 rounded-xl p-3 text-xs text-white focus:outline-none focus:border-cat1">
+            </div>
+
+            <div class="flex justify-end space-x-3 mt-6">
+                <button onclick="closeCreatorModal()" class="px-5 py-2.5 rounded-full text-xs font-semibold glass-badge hover:bg-white/10">Cancel</button>
+                <button onclick="submitNewPost()" class="px-6 py-2.5 rounded-full text-xs font-semibold bg-gradient-to-r from-cat1 to-cat3 text-black font-bold hover:opacity-90">Publish to Feed</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const state = {
+            categories: [
+                { id: 'cat1', name: 'Cyberpunk Aesthetics', value: 35, color: '#22d3ee' },
+                { id: 'cat2', name: 'Indie Pop Audio', value: 15, color: '#f43f5e' },
+                { id: 'cat3', name: 'Machine Learning', value: 25, color: '#a855f7' },
+                { id: 'cat4', name: 'Astrophysics', value: 25, color: '#f59e0b' }
+            ]
+        };
+
+        let contentFeed = [
+            { id: 'c1', type: 'image', catId: 'cat1', title: "Building Procedural Megacities in Unreal Engine 5", img: "https://placehold.co/800x1200/082f49/22d3ee?text=UE5+Cities", author: "@neo_architect" },
+            { id: 'c2', type: 'image', catId: 'cat3', title: "The Mathematics of High-Dimensional Vector Spaces", img: "https://placehold.co/1000x800/3b0764/a855f7?text=Vector+Math", author: "@data_science" },
+            { id: 'c3', type: 'embed', platform: 'Substack', catId: 'cat3', title: "Why State Space Models are Challenging Transformers in 2026", author: "Substack • @ai_frontier", url: "#" },
+            { id: 'c4', type: 'image', catId: 'cat4', title: "JWST Captures New Pillars of Creation in Near-Infrared", img: "https://placehold.co/800x1400/451a03/f59e0b?text=JWST", author: "@cosmos_daily" },
+            { id: 'c5', type: 'embed', platform: 'Twitter', catId: 'cat1', title: "Quick look at real-time path tracing shaders running directly inside browser WebGPU engines.", author: "X / Twitter • @gpu_wizard", url: "#" }
+        ];
+
+        let activeTab = 'short';
+        const R = 75;
+        const C = 2 * Math.PI * R;
+        const svg = document.getElementById('dna-chart');
+        const legendContainer = document.getElementById('chart-legend');
+        const feedContainer = document.getElementById('feed-container');
+        const canvas = document.getElementById('particle-canvas');
+        const ctx = canvas.getContext('2d');
+        let particles = [];
+        let activeHolds = {};
+
+        function resizeCanvas() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+        }
+        window.addEventListener('resize', resizeCanvas);
+        resizeCanvas();
+
+        function renderCards() {
+            feedContainer.innerHTML = '';
+            contentFeed.forEach((item) => {
+                const cat = state.categories.find(c => c.id === item.catId) || state.categories[0];
+                let cardInner = '';
+
+                if (item.type === 'embed') {
+                    cardInner = `
+                        <div class="p-6 bg-surface/80">
+                            <div class="flex items-center justify-between mb-4">
+                                <span class="px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider bg-white/10 text-white flex items-center">
+                                    <i class="ph-fill ph-share-network mr-1.5 text-cat3"></i> ${item.platform} Embed
+                                </span>
+                                <a href="${item.url}" target="_blank" class="text-white/40 hover:text-white text-xs flex items-center">Original <i class="ph ph-arrow-up-right ml-1"></i></a>
+                            </div>
+                            <h3 class="text-xl font-bold text-white mb-3 leading-snug">${item.title}</h3>
+                            <p class="text-xs text-white/60 mb-6">Embedded cross-platform article parsed natively into your interest vector stream.</p>
+                            <div class="flex items-center justify-between text-xs text-white/50 border-t border-white/5 pt-4">
+                                <span>${item.author}</span>
+                                <span class="text-cat3 font-semibold">99% Match</span>
+                            </div>
+                        </div>
+                    `;
+                } else {
+                    cardInner = `
+                        <img src="${item.img}" alt="${item.title}" class="w-full h-auto block cinematic-img pointer-events-none">
+                        <div class="absolute inset-0 bg-gradient-to-t from-black/90 via-black/40 to-transparent"></div>
+                        <div class="absolute bottom-0 left-0 w-full p-6 flex flex-col justify-end">
+                            <div class="flex items-center space-x-2 mb-3">
+                                <div class="w-2 h-2 rounded-full shadow-[0_0_8px_currentColor]" style="background-color: ${cat.color}; color: ${cat.color}"></div>
+                                <span class="text-white/80 text-xs font-medium uppercase tracking-wider">${cat.name}</span>
+                            </div>
+                            <h3 class="text-lg md:text-xl font-bold text-white mb-4 leading-tight">${item.title}</h3>
+                            <div class="flex items-center justify-between text-white/50 text-xs font-medium mb-4">
+                                <span>${item.author || '@user'}</span>
+                                <span>98% Match</span>
+                            </div>
+                            <div class="glass-badge p-3 rounded-xl opacity-0 group-hover:opacity-100 transition-all duration-500 border-t border-white/10 flex justify-between items-center">
+                                <span class="text-[10px] font-bold text-white/70 uppercase tracking-widest flex items-center">
+                                    <i class="ph-bold ph-arrows-left-right mr-2 text-lg"></i> Drag to Tune
+                                </span>
+                                <div class="flex items-center space-x-3 text-[10px] font-bold uppercase tracking-widest">
+                                    <span class="text-red-400">Banish</span>
+                                    <span class="text-white/30">|</span>
+                                    <span style="color: ${cat.color}">Resonate</span>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                }
+
+                const html = `
+                    <article class="masonry-item relative w-full rounded-[24px] overflow-hidden group shadow-[0_10px_30px_rgba(0,0,0,0.5)] border border-white/5 bg-surface cursor-grab active:cursor-grabbing card-gesturable" 
+                             onpointerdown="startGesture(event, '${item.id}', '${cat.id}', '${cat.color}')">
+                        ${cardInner}
+                    </article>
+                `;
+                feedContainer.insertAdjacentHTML('beforeend', html);
+            });
+        }
+
+        function updateChartUI() {
+            const total = state.categories.reduce((sum, cat) => sum + Math.max(1, cat.value), 0);
+            let currentOffset = 0;
+            svg.innerHTML = `<circle cx="100" cy="100" r="75" fill="none" stroke="rgba(255,255,255,0.03)" stroke-width="22" />`;
+            legendContainer.innerHTML = '';
+
+            state.categories.forEach((cat) => {
+                const percentage = Math.max(1, cat.value) / total;
+                const dashLength = percentage * C;
+                const gapLength = C - dashLength;
+                
+                const circle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+                circle.setAttribute("cx", "100");
+                circle.setAttribute("cy", "100");
+                circle.setAttribute("r", R);
+                circle.setAttribute("class", "chart-circle");
+                circle.style.stroke = cat.color;
+                circle.style.color = cat.color;
+                circle.style.strokeDasharray = `${dashLength} ${gapLength}`;
+                circle.style.strokeDashoffset = -currentOffset;
+                svg.appendChild(circle);
+                currentOffset += dashLength;
+
+                const displayPct = Math.round(percentage * 100);
+                legendContainer.insertAdjacentHTML('beforeend', `
+                    <div class="flex items-center justify-between group py-1">
+                        <div class="flex items-center space-x-2">
+                            <div class="w-2 h-2 rounded-full shadow-[0_0_8px_currentColor]" style="background-color: ${cat.color}; color: ${cat.color}"></div>
+                            <span class="text-xs font-medium text-white/70 group-hover:text-white transition-colors truncate max-w-[150px]">${cat.name}</span>
+                        </div>
+                        <span class="text-xs font-mono font-bold" style="color: ${cat.color}">${displayPct}%</span>
+                    </div>
+                `);
+            });
+        }
+
+        // Modals Control
+        function openIntentModal() { document.getElementById('intent-modal').classList.remove('hidden'); }
+        function closeIntentModal() { document.getElementById('intent-modal').classList.add('hidden'); }
+        function saveNewIntent() {
+            const val = document.getElementById('intent-input').value;
+            if(val) {
+                document.getElementById('current-intent-preview').innerText = `"${val.slice(0, 40)}..."`;
+            }
+            closeIntentModal();
+        }
+
+        function openCreatorModal() { document.getElementById('creator-modal').classList.remove('hidden'); }
+        function closeCreatorModal() { document.getElementById('creator-modal').classList.add('hidden'); }
+        
+        function switchTab(tab) {
+            activeTab = tab;
+            ['short', 'long', 'embed'].forEach(t => {
+                document.getElementById(`form-${t}`).classList.add('hidden');
+                document.getElementById(`tab-${t}`).className = "flex-1 py-2 rounded-xl text-xs font-bold text-white/50 hover:text-white transition-all";
+            });
+            document.getElementById(`form-${tab}`).classList.remove('hidden');
+            document.getElementById(`tab-${tab}`).className = "flex-1 py-2 rounded-xl text-xs font-bold bg-white/10 text-white transition-all";
+        }
+
+        function submitNewPost() {
+            if (activeTab === 'embed') {
+                const platform = document.getElementById('embed-platform').value;
+                const headline = document.getElementById('embed-headline').value || 'New External Embed';
+                const url = document.getElementById('embed-url').value || '#';
+                contentFeed.unshift({ id: 'e_' + Date.now(), type: 'embed', platform: platform, catId: 'cat3', title: headline, author: `${platform} • @user`, url: url });
+            } else {
+                const text = activeTab === 'short' ? document.getElementById('short-text').value : document.getElementById('long-title').value;
+                const catId = activeTab === 'short' ? document.getElementById('post-cat').value : 'cat1';
+                if(text) {
+                    contentFeed.unshift({ id: 'p_' + Date.now(), type: 'image', catId: catId, title: text, img: "https://placehold.co/800x1000/111827/22d3ee?text=User+Post", author: "@current_user" });
+                }
+            }
+            renderCards();
+            closeCreatorModal();
+        }
+
+        // Gesture Drag Handling
+        function startGesture(e, cardId, catId, color) {
+            if (e.pointerType === 'mouse' && e.button !== 0) return;
+            const cardElement = e.currentTarget;
+            if(e.target.closest('button')) return; 
+
+            activeHolds[cardId] = {
+                startX: e.clientX, startY: e.clientY, card: cardElement, catId: catId, color: color,
+                direction: 0, holdDuration: 0, interval: null, isActive: false
+            };
+
+            const moveHandler = (ev) => handleGestureMove(ev, cardId);
+            const upHandler = (ev) => endGesture(ev, cardId);
+            activeHolds[cardId].moveHandler = moveHandler;
+            activeHolds[cardId].upHandler = upHandler;
+
+            document.addEventListener('pointermove', moveHandler);
+            document.addEventListener('pointerup', upHandler);
+        }
+
+        function handleGestureMove(e, cardId) {
+            const gesture = activeHolds[cardId];
+            if (!gesture) return;
+            const deltaX = e.clientX - gesture.startX;
+            const deltaY = e.clientY - gesture.startY;
+
+            if (!gesture.isActive && Math.abs(deltaX) > 20 && Math.abs(deltaX) > Math.abs(deltaY)) {
+                gesture.isActive = true;
+            }
+
+            if (gesture.isActive) {
+                const newDirection = deltaX > 0 ? 1 : -1;
+                gesture.card.style.setProperty('--glow-color', gesture.color);
+
+                if (newDirection !== gesture.direction) {
+                    gesture.direction = newDirection;
+                    gesture.card.classList.remove('card-positive', 'card-negative');
+                    gesture.card.classList.add(newDirection === 1 ? 'card-positive' : 'card-negative');
+                    if (gesture.interval) clearInterval(gesture.interval);
+                    
+                    const rect = gesture.card.getBoundingClientRect();
+                    const spawnX = newDirection === 1 ? rect.right - 20 : rect.left + 20;
+                    const spawnY = rect.top + rect.height / 2;
+
+                    gesture.interval = setInterval(() => {
+                        spawnChargeParticles(spawnX, spawnY, gesture.catId, gesture.color, gesture.direction);
+                        gesture.holdDuration += 100;
+                        if (gesture.direction === -1 && gesture.holdDuration > 1500) endGesture(null, cardId, true);
+                    }, 100);
+                }
+            }
+        }
+
+        function endGesture(e, cardId, forceBanish = false) {
+            const gesture = activeHolds[cardId];
+            if (!gesture) return;
+            document.removeEventListener('pointermove', gesture.moveHandler);
+            document.removeEventListener('pointerup', gesture.upHandler);
+            if (gesture.interval) clearInterval(gesture.interval);
+
+            if (forceBanish) {
+                gesture.card.classList.add('is-banished');
+                setTimeout(() => gesture.card.style.display = 'none', 500);
+            } else {
+                gesture.card.classList.remove('card-positive', 'card-negative');
+            }
+            delete activeHolds[cardId];
+        }
+
+        function spawnChargeParticles(x, y, catId, color, direction) {
+            const chartSvg = document.getElementById('dna-chart');
+            const targetRect = chartSvg.getBoundingClientRect();
+            const targetX = targetRect.left + targetRect.width / 2;
+            const targetY = targetRect.top + targetRect.height / 2;
+            
+            const particleColor = direction > 0 ? color : '#ef4444'; 
+            particles.push({
+                x, y, startX: x, startY: y, targetX, targetY,
+                color: particleColor, size: Math.random() * 3 + 1.5,
+                progress: 0, speed: 0.03, cp1x: x + (Math.random() - 0.5) * 150, cp1y: y - 100,
+                catId, changeVal: direction > 0 ? 3 : -3, reached: false, isNegative: direction < 0
+            });
+        }
+
+        function animateCanvas() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            for (let i = particles.length - 1; i >= 0; i--) {
+                const p = particles[i];
+                if (p.reached) continue;
+                p.progress += p.speed;
+                if (p.progress >= 1) {
+                    p.reached = true;
+                    const cat = state.categories.find(c => c.id === p.catId);
+                    if(cat) { cat.value = Math.max(5, cat.value + p.changeVal); updateChartUI(); }
+                    particles.splice(i, 1);
+                    continue;
+                }
+                const t = p.progress, invT = 1 - t;
+                p.x = invT * invT * p.startX + 2 * invT * t * p.cp1x + t * t * p.targetX;
+                p.y = invT * invT * p.startY + 2 * invT * t * p.cp1y + t * t * p.targetY;
+
+                ctx.beginPath();
+                ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+                ctx.fillStyle = p.color;
+                ctx.shadowBlur = 10; ctx.shadowColor = p.color;
+                ctx.fill();
+            }
+            requestAnimationFrame(animateCanvas);
+        }
+
+        // Initialize
+        renderCards();
+        updateChartUI();
+        svg.style.transform = 'rotate(-90deg)';
+        animateCanvas();
+    </script>
+</body>
+</html>
