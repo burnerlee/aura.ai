@@ -67,6 +67,12 @@ make embed-status
 # Search / feed / API
 make search QUERY="climate policy" K=5
 scraper serve                 # http://localhost:8000/docs
+
+# Web UI (three terminals)
+make serve                    # Python API :8000
+make web-api                  # Express BFF :5000 → :8000
+make web-ui                   # aura-web :5173 (proxy /api → BFF)
+# Offline UI only: make web-ui-demo   # VITE_USE_DEMO=1
 ```
 
 ## Makefile targets
@@ -78,7 +84,9 @@ scraper serve                 # http://localhost:8000/docs
 | `make scrape-substack` / `discover` | Scrape |
 | `make embed` / `embed-status` | Embedding worker |
 | `make search QUERY=…` | Semantic search |
-| `make serve` | FastAPI |
+| `make serve` | FastAPI recommendation API |
+| `make web-api` / `web-ui` / `web-ui-demo` | Express BFF + Aura UI |
+| `make web-codegen` | Regenerate Orval client from OpenAPI |
 | `make test` / `lint` | Tests / ruff |
 
 ## Configuration

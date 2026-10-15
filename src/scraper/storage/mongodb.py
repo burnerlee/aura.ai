@@ -9,6 +9,8 @@ from collections.abc import Iterator
 from datetime import UTC, datetime
 from typing import Any
 
+from bson import ObjectId
+from bson.errors import InvalidId
 from pymongo import ASCENDING, DESCENDING, MongoClient, UpdateOne
 from pymongo.collection import Collection
 from pymongo.errors import ConnectionFailure
@@ -17,6 +19,13 @@ from scraper.config import Settings, get_settings
 from scraper.models.document import ContentDocument, EmbeddingStatus
 
 logger = logging.getLogger(__name__)
+
+
+def _to_object_id(post_id: str) -> ObjectId | str:
+    try:
+        return ObjectId(post_id)
+    except InvalidId:
+        return post_id
 
 
 class MongoDocumentStore:
@@ -165,13 +174,19 @@ class MongoDocumentStore:
         return self.collection.find_one({"source": source, "external_id": external_id})
 
     def get_by_id(self, post_id: str) -> dict[str, Any] | None:
-        from bson import ObjectId
-        from bson.errors import InvalidId
+        return self.collection.find_one({"_id": _to_object_id(post_id)})
 
-        try:
-            return self.collection.find_one({"_id": ObjectId(post_id)})
-        except InvalidId:
-            return self.collection.find_one({"_id": post_id})
+    def get_many_by_ids(self, post_ids: list[str]) -> dict[str, dict[str, Any]]:
+        """Return ``{post_id_str: doc}`` for ids that exist."""
+        if not post_ids:
+            return {}
+        object_ids: list[ObjectId | str] = []
+        for pid in post_ids:
+            object_ids.append(_to_object_id(pid))
+        found: dict[str, dict[str, Any]] = {}
+        for doc in self.collection.find({"_id": {"$in": object_ids}}):
+            found[str(doc["_id"])] = doc
+        return found
 
     def list_by_source(
         self,

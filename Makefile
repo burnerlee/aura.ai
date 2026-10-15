@@ -2,7 +2,8 @@
 
 .PHONY: help setup venv install install-dev env mongo-up mongo-down mongo-logs mongo-reset \
 	qdrant-up qdrant-down ping connectors scrape-substack discover reload-clean list-docs \
-	embed embed-status search serve lint test clean
+	embed embed-status search serve lint test clean \
+	web-install web-codegen web-api web-ui web-ui-demo
 
 # Prefer 3.11+ when available (macOS system python is often 3.9).
 PYTHON ?= $(shell command -v python3.12 || command -v python3.11 || command -v python3)
@@ -108,6 +109,25 @@ search: ## Semantic search (QUERY="…" K=10)
 
 serve: ## Start recommendation API
 	@$(SCRAPER) serve
+
+web-install: ## Install web monorepo deps (pnpm)
+	cd web && pnpm install --no-frozen-lockfile
+
+web-codegen: ## Regenerate Orval client + Zod from OpenAPI
+	cd web && pnpm --filter @workspace/api-spec exec orval --config ./orval.config.ts
+
+web-api: ## Start Express BFF on :5000 (proxies to Python :8000)
+	cd web && PORT=$${PORT:-5000} RECOMMENDATION_API_URL=$${RECOMMENDATION_API_URL:-http://127.0.0.1:8000} \
+		pnpm --filter @workspace/api-server run dev
+
+web-ui: ## Start aura-web against live API (needs make serve + make web-api)
+	cd web && PORT=$${PORT:-5173} BASE_PATH=/ \
+		API_PROXY_TARGET=$${API_PROXY_TARGET:-http://127.0.0.1:5000} \
+		pnpm --filter @workspace/aura-web run dev
+
+web-ui-demo: ## Start aura-web in offline demo mode
+	cd web && PORT=$${PORT:-5173} BASE_PATH=/ VITE_USE_DEMO=1 \
+		pnpm --filter @workspace/aura-web run dev
 
 lint: ## Run ruff
 	@$(BIN)/ruff check src

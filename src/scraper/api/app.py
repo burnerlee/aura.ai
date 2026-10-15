@@ -1,76 +1,128 @@
 # Copyright (c) 2026 DevRev Inc. All rights reserved.
 
-"""FastAPI app: search, similar, feed, events, profile, onboard, persona."""
+"""FastAPI app: search, similar, feed, events, profile, onboard, persona, posts."""
 
 from __future__ import annotations
 
 from typing import Any
 
-from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel, Field
+from fastapi import BackgroundTasks, FastAPI, HTTPException, Query
+from fastapi.middleware.cors import CORSMiddleware
 
-from scraper.models.user import EventType, FeedbackReason, Interaction
+from scraper.api.cards import FeedCard
+from scraper.api.posts import (
+    CreatePostRequest,
+    CreatePostResponse,
+    create_user_post,
+    get_card,
+    get_cards,
+    hydrate_results,
+    maybe_embed_post,
+)
+from scraper.api.schemas import (
+    EventsRequest,
+    OnboardRequest,
+    SearchRequest,
+    TuneRequest,
+)
+from scraper.embedding.worker import embed_by_ids
+from scraper.models.user import EventType, Interaction
 from scraper.profile.service import UserProfileService
 from scraper.query.engine import RecommendationEngine
 from scraper.query.types import Filters
 
 
-def create_app() -> FastAPI:
+def create_app(
+    *,
+    engine: RecommendationEngine | None = None,
+    profiles: UserProfileService | None = None,
+) -> FastAPI:
     app = FastAPI(title="Content Recommendation API", version="0.1.0")
-    engine = RecommendationEngine()
-    profiles = UserProfileService(engine=engine)
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+
+    engine = engine or RecommendationEngine()
+    profiles = profiles or UserProfileService(engine=engine)
+    store = engine.store
 
     @app.get("/health")
+    @app.get("/healthz")
     def health() -> dict[str, str]:
         return {"status": "ok"}
 
-    class SearchRequest(BaseModel):
-        query: str
-        k: int = 10
-        sources: list[str] | None = None
-        explain: bool = False
-
     @app.post("/search")
-    def search(body: SearchRequest) -> list[dict[str, Any]]:
+    def search(body: SearchRequest) -> list[FeedCard]:
         filters = Filters(sources=body.sources) if body.sources else None
-        results = engine.search(body.query, k=body.k, filters=filters, explain=body.explain)
-        return [r.model_dump() for r in results]
+        results = engine.search(
+            body.query, k=body.k, filters=filters, explain=body.explain
+        )
+        return hydrate_results(store, results)
 
     @app.get("/posts/{post_id}/similar")
-    def similar(post_id: str, k: int = 10) -> list[dict[str, Any]]:
-        return [r.model_dump() for r in engine.similar(post_id, k=k)]
+    def similar(post_id: str, k: int = 10) -> list[FeedCard]:
+        return hydrate_results(store, engine.similar(post_id, k=k))
+
+    @app.get("/posts/{post_id}", response_model=FeedCard)
+    def get_post(post_id: str) -> FeedCard:
+        card = get_card(store, post_id)
+        if card is None:
+            raise HTTPException(status_code=404, detail="Post not found")
+        return card
+
+    @app.get("/posts", response_model=list[FeedCard])
+    def list_posts(
+        ids: list[str] = Query(default_factory=list),
+    ) -> list[FeedCard]:
+        if not ids:
+            return []
+        return get_cards(store, ids)
+
+    @app.post("/posts", response_model=CreatePostResponse)
+    def create_post(
+        body: CreatePostRequest,
+        background_tasks: BackgroundTasks,
+    ) -> CreatePostResponse:
+        try:
+            raw, card = create_user_post(body, store=store)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+        post_id = str(raw["_id"])
+        embedding_summary: dict[str, Any] | None = None
+        if body.wait_for_embed:
+            embedding_summary = maybe_embed_post(post_id, wait=True, store=store)
+            refreshed = get_card(store, post_id)
+            if refreshed is not None:
+                card = refreshed
+        else:
+            background_tasks.add_task(embed_by_ids, [post_id], store=store)
+
+        return CreatePostResponse(post=card, embedding_summary=embedding_summary)
+
+    @app.post("/posts/{post_id}/embed")
+    def embed_post(post_id: str) -> dict[str, Any]:
+        if store.get_by_id(post_id) is None:
+            raise HTTPException(status_code=404, detail="Post not found")
+        return embed_by_ids([post_id], store=store)
 
     @app.get("/users/{user_id}/feed")
-    def feed(user_id: str, k: int = 10, explain: bool = False) -> list[dict[str, Any]]:
+    def feed(user_id: str, k: int = 10, explain: bool = False) -> list[FeedCard]:
         results = profiles.feed(user_id, k=k, explain=explain)
-        return [
-            {**r.model_dump(), "why": r.reason}
-            for r in results
-        ]
+        return hydrate_results(store, results)
 
     @app.get("/users/{user_id}/pair")
-    def pair(user_id: str) -> list[dict[str, Any]]:
-        return [r.model_dump() for r in profiles.pair(user_id)]
-
-    class EventIn(BaseModel):
-        post_id: str | None = None
-        event: EventType
-        strength: int | None = None
-        hold_ms: int | None = None
-        reason: FeedbackReason | None = None
-        dwell_ms: int | None = None
-        visible_ms: int | None = None
-        scroll_depth: float | None = None
-        completed: bool | None = None
-        read_ratio: float | None = None
-        text: str | None = None
-        pair_post_id: str | None = None
-
-    class EventsRequest(BaseModel):
-        events: list[EventIn] = Field(default_factory=list)
+    def pair(user_id: str) -> list[FeedCard]:
+        return hydrate_results(store, profiles.pair(user_id))
 
     @app.post("/users/{user_id}/events")
     def events(user_id: str, body: EventsRequest) -> dict[str, Any]:
+        # UI mapping: resonate → like, banish → not_interested, bookmark → save.
+        # ``post_id`` must be the Mongo ``_id`` string from FeedCard.id.
         profile = None
         for ev in body.events:
             interaction = Interaction(user_id=user_id, **ev.model_dump())
@@ -80,9 +132,6 @@ def create_app() -> FastAPI:
             "count": len(body.events),
             "persona_version": profile.persona_version if profile else None,
         }
-
-    class TuneRequest(BaseModel):
-        text: str
 
     @app.post("/users/{user_id}/tune")
     def tune(user_id: str, body: TuneRequest) -> dict[str, Any]:
@@ -95,13 +144,7 @@ def create_app() -> FastAPI:
     @app.get("/users/{user_id}/profile")
     def get_profile(user_id: str) -> dict[str, Any]:
         profile = profiles.get_or_create(user_id)
-        data = profile.model_dump()
-        # Don't dump huge vectors in list form for brevity in API responses optionally
-        return data
-
-    class OnboardRequest(BaseModel):
-        free_text: str | None = None
-        seed_post_ids: list[str] = Field(default_factory=list)
+        return profile.model_dump()
 
     @app.post("/users/{user_id}/onboard")
     def onboard(user_id: str, body: OnboardRequest) -> dict[str, Any]:
