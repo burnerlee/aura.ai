@@ -1,365 +1,177 @@
-# Content Scraper
+# Content Scraper + Recommendation Pipeline
 
-Python multi-connector scraper that pulls posts/content from external sources and stores normalized documents in MongoDB. Built for a future embeddings + recommendation pipeline.
+Python multi-connector scraper that pulls posts from external sources into MongoDB, embeds them as multi-vector sets in Qdrant (Gemini), and serves personalized recommendations via a set-to-set query engine and LLM-synthesized user personas. No reinforcement learning.
 
 ## Architecture
 
 ```
-┌─────────────┐     ┌──────────────────┐     ┌─────────────┐
-│  CLI / Make │────▶│  Connector       │────▶│  MongoDB    │
-│             │     │  (substack, …)   │     │  posts      │
-└─────────────┘     └──────────────────┘     └─────────────┘
-                              │
-                              ▼
-                    ContentDocument
-                    (normalized schema)
+Connector → MongoDB posts → ContentAdapter → EmbeddableContent
+                                              ↓
+                                    Chunker + Facets (LLM)
+                                              ↓
+                         Qdrant (chunks MaxSim, doc, facet)
+                                              ↓
+                    Query engine (ANN filter → set-to-set F=A∘σ)
+                                              ↓
+                         FastAPI / CLI  ←  User profile
+                         (events, feed, persona, tune)
 ```
 
 | Layer | Role |
 |-------|------|
 | **Connectors** | Source-specific fetch + normalize → `ContentDocument` |
-| **Pipeline** | Batch scrape → upsert into MongoDB |
-| **Storage** | Single MongoDB `posts` collection; unique `(source, external_id)` |
-| **Future** | `embedding_status` / `embedding_id` fields reserved for vector DB |
+| **Adapters** | Raw Mongo dict → typed `EmbeddableContent` (or `SkipReason`) |
+| **Embedding** | Chunk + Gemini embed + LLM facets → Qdrant multivectors |
+| **Query engine** | DESSERT-style two-stage retrieval (doc ANN → chunk MaxSim) |
+| **Profile** | Implicit/explicit feedback → state, centroids, persona (no RL) |
+
+### Paper mapping
+
+- **DESSERT**: each post is a *set* of chunk embeddings; queries/users are weighted vector sets; score with MaxSim (`σ=max`) then weighted mean (`A`). Stage-1 ANN on `doc` vectors is the paper’s cheap filter; stage-2 Exact MaxSim rerank uses Qdrant multivectors + numpy for weights/negatives.
+- **Social Image Rec (non-RL)**: style/emotion/personality facets via LLM; self-attention state update (Eq. 6–9); characteristic vector → our profile `QuerySet`; liked/disliked memory → negative vector set. Actor-Critic/DDPG dropped.
 
 ### Schema (MongoDB `posts`)
 
-All connectors write the same `ContentDocument` shape into **`content_scraper.posts`**:
-
 - **Identity:** `source`, `external_id`, `url`, `embed_url`, `canonical_url`
 - **Content:** `title`, `subtitle`, `content`, `content_html`, `content_text`, `summary`
-- **Author:** `author.{name,external_id,url,bio,avatar_url,metadata}`
-- **Media / taxonomy:** `cover_image_url`, `media_urls`, `tags`, `categories`, `audience`
-- **Timestamps:** `published_at`, `updated_at`, `scraped_at`
-- **Engagement:** `word_count`, `reaction_count`, `comment_count`
-- **Extras:** `metadata` (source-specific fields; keep lean)
-- **Vector hooks:** `embedding_status`, `embedding_id`, `embedding_model`
+- **Author / taxonomy / engagement:** as before
+- **Vector hooks:** `embedding_status`, `embedding_id`, `embedding_model`, `embedded_at`, `content_hash`, `chunk_count`, `facets`, `embedding_error`
 
-Empty / null fields are stripped on write. Only filled values land in MongoDB.
+Scrape upserts use `$set` of scraped fields only and `$setOnInsert: {embedding_status: pending}` so re-scrapes do not wipe embeddings.
+
+### Qdrant collection `posts`
+
+Named vectors: `chunks` (multivector MAX_SIM), `doc` (mean of chunks, HNSW), `facet`, `image` (optional). Payload carries `post_id`, filters, and facet summary fields.
 
 ## Prerequisites
 
-- Python 3.11+ (`make` prefers `python3.12` / `python3.11` over system `python3`)
+- Python 3.11+
 - Docker + Docker Compose
 - Make
+- `GEMINI_API_KEY` in `.env` (for embed / facets / persona / search)
 
 ## Quick start
 
 ```bash
-# 1. Full setup: .env, venv, deps, MongoDB
-make setup
-
-# 2. List connectors
-make connectors
-
-# 3. Scrape a Substack publication (public posts)
+make setup                    # .env, venv, deps, MongoDB, Qdrant
 make scrape-substack SOURCE=platformer LIMIT=5
-
-# 4. Inspect stored docs
 make list-docs LIMIT=5
-```
 
-Equivalent CLI:
+# Dry-run adapter (no API calls)
+scraper adapt substack <external_id>
 
-```bash
-source .venv/bin/activate
-scraper scrape substack platformer --limit 5
-# or full URL:
-scraper scrape substack https://www.lennysnewsletter.com --limit 3
-scraper list-docs --source substack -n 10
+# Embed pending posts (needs GEMINI_API_KEY)
+make embed LIMIT=16
+make embed-status
+
+# Search / feed / API
+make search QUERY="climate policy" K=5
+scraper serve                 # http://localhost:8000/docs
 ```
 
 ## Makefile targets
 
 | Target | Description |
 |--------|-------------|
-| `make setup` | `.env` + venv + install + MongoDB up + ping |
-| `make mongo-up` / `mongo-down` | Start / stop MongoDB |
-| `make mongo-reset` | Stop MongoDB and delete volume data |
-| `make ping` | App-level MongoDB health check |
-| `make connectors` | List registered connectors |
-| `make scrape-substack SOURCE=… LIMIT=…` | Run Substack connector |
-| `make list-docs` | Preview documents in MongoDB |
-| `make install-dev` | Install with pytest / ruff |
-| `make lint` / `make test` | Lint / tests |
-| `make clean` | Remove venv and caches |
+| `make setup` | `.env` + venv + install + MongoDB + Qdrant |
+| `make mongo-up` / `qdrant-up` | Start services |
+| `make scrape-substack` / `discover` | Scrape |
+| `make embed` / `embed-status` | Embedding worker |
+| `make search QUERY=…` | Semantic search |
+| `make serve` | FastAPI |
+| `make test` / `lint` | Tests / ruff |
 
 ## Configuration
 
-Copy `.env.example` → `.env` (done by `make env` / `make setup`):
+See `.env.example`. Important vars:
 
 | Variable | Default | Notes |
 |----------|---------|-------|
-| `MONGO_HOST` | `localhost` | |
-| `MONGO_PORT` | `27017` | |
-| `MONGO_USER` / `MONGO_PASSWORD` | `scraper` / `scraper` | Docker root user (`authSource=admin`) |
-| `MONGO_DB` | `content_scraper` | |
-| `MONGO_COLLECTION` | `posts` | |
-| `MONGO_URI` | _(unset)_ | Overrides host/user/password when set |
-| `REQUEST_DELAY_SECONDS` | `0.5` | Politeness delay between post fetches |
-| `HTTP_TIMEOUT_SECONDS` | `30` | |
-| `LOG_LEVEL` | `INFO` | |
+| `GEMINI_API_KEY` | _(required)_ | Google AI Studio / Gemini API key |
+| `GEMINI_EMBEDDING_MODEL` | `gemini-embedding-2` | |
+| `GEMINI_LLM_MODEL` | `gemini-3.8-flash` | Facets + persona |
+| `EMBEDDING_DIM` | `768` | MRL truncation |
+| `QDRANT_URL` | `http://localhost:6333` | |
+| `CHUNK_WORDS` / `MAX_CHUNKS_PER_POST` | `300` / `32` | |
+| `FILTER_K` | `64` | Stage-1 candidate pool |
+| `WEIGHT_VERSION` | `default_v1` | Live weight table (`hold_ms` unused) |
 
-Connection URI used by the app:
+## Content adapters
 
-```text
-mongodb://scraper:scraper@localhost:27017/content_scraper?authSource=admin
-```
-
-## Discover → scrape posts
-
-Leaderboards are used only to **find blogs**. We then scrape their **articles** into MongoDB. Blog/publication rows are not stored.
+Mongo docs are unstructured at the edges. Adapters resolve fields into `EmbeddableContent`:
 
 ```bash
-# Top 5 rising blogs per category → scrape 3 latest posts each
-make discover PER_CATEGORY=5 POSTS=3 TIER=rising
-
-# CLI
-scraper discover substack --per-category 5 --posts 3 --tier rising
-scraper discover substack -n 2 -p 3 -c technology -c business
-scraper discover substack -n 5 --dry-run   # list blogs only, no Mongo writes
+scraper adapt substack 219681543
 ```
 
-| Flag | Default | Meaning |
-|------|---------|---------|
-| `--per-category` / `-n` | `5` | Blogs to take from each category |
-| `--posts` / `-p` | `3` | Latest articles to scrape per unique blog |
-| `--tier` / `-t` | `rising` | `rising` \| `all` \| `paid` \| `free` |
-| `--category` / `-c` | all | Filter by slug/id/name (repeatable) |
-| `--dry-run` | off | List blogs only; do not scrape |
-| `--json` | off | Machine-readable output |
+- `DefaultContentAdapter` — fallback chains (`content_text` → `content` → strip HTML → `summary`)
+- `SubstackContentAdapter` — skips non-posts, strips boilerplate, folds `section_name` into categories
 
-Uses `GET /api/v1/categories` + leaderboards, then each blog’s archive/post APIs.
+Adding a connector: implement `BaseConnector`, and only add a `ContentAdapter` if field layout differs from the default chains.
 
-## Substack connector
-
-Uses Substack’s public JSON API (no API key for public posts):
-
-1. `GET {publication}/api/v1/archive?sort=new&limit=&offset=` — list posts  
-2. `GET {publication}/api/v1/posts/{slug}` — full `body_html` + author bylines  
-
-`source_id` accepts:
-
-- Handle: `platformer`
-- Substack host: `platformer.substack.com`
-- Full URL / custom domain: `https://www.lennysnewsletter.com`
-
-`embed_url` is set to `{publication}/embed/p/{slug}`.
-
-Paywalled posts may return truncated body content depending on Substack’s public response.
-
-## Adding a connector
-
-Every source (Medium, RSS, Reddit, …) is a **connector**: fetch source-specific data, normalize to `ContentDocument`, yield. The pipeline and Mongo layer stay untouched.
-
-### Contract
-
-| Piece | Requirement |
-|-------|-------------|
-| Class | Subclass `BaseConnector` |
-| `name` | Unique lowercase string (becomes CLI name + Mongo `source`) |
-| `description` | Short human string (shown in `scraper connectors`) |
-| `scrape()` | Generator yielding `ContentDocument` |
-| Config | Read `self.config` (`source_id`, `limit`, `offset`, `fetch_full_content`, `extras`) |
-| Registration | `@register_connector` + import in `connectors/__init__.py` |
-
-Reference implementation: `src/scraper/connectors/substack.py`.
-
-### Checklist
-
-1. **Create** `src/scraper/connectors/<name>.py`
-2. **Implement** fetch + map → `ContentDocument` (see field guide below)
-3. **Register** with `@register_connector`
-4. **Import** the module in `src/scraper/connectors/__init__.py` (side-effect registration)
-5. **Test** mapping / URL helpers under `tests/`
-6. **Run** `scraper connectors` (your name should appear) then `scraper scrape <name> <source_id> --limit 2`
-7. **Optional Makefile** target, e.g. `scrape-<name>`
-
-### Minimal example
-
-```python
-# src/scraper/connectors/example_rss.py
-# Copyright (c) 2026 DevRev Inc. All rights reserved.
-
-from __future__ import annotations
-
-from collections.abc import Iterator
-from datetime import datetime, timezone
-
-import httpx
-
-from scraper.config import get_settings
-from scraper.connectors.base import BaseConnector
-from scraper.connectors.registry import register_connector
-from scraper.models.document import Author, ContentDocument
-
-
-@register_connector
-class ExampleRssConnector(BaseConnector):
-    name = "example_rss"
-    description = "Scrape posts from a public RSS/Atom feed URL"
-
-    def validate_config(self) -> None:
-        super().validate_config()
-        if not self.config.source_id.startswith(("http://", "https://")):
-            raise ValueError("source_id must be a feed URL")
-
-    def scrape(self) -> Iterator[ContentDocument]:
-        settings = get_settings()
-        # Replace with real RSS parsing (feedparser, etc.)
-        # Here we illustrate the ContentDocument shape only.
-        yielded = 0
-        with httpx.Client(
-            timeout=settings.http_timeout_seconds,
-            headers={"User-Agent": settings.http_user_agent},
-            follow_redirects=True,
-        ) as client:
-            _ = client.get(self.config.source_id)  # fetch feed…
-            # for each item in feed:
-            doc = ContentDocument(
-                source=self.name,
-                external_id="unique-stable-id",  # REQUIRED: stable across runs
-                url="https://example.com/article",
-                title="Article title",
-                content="Full plain-text body…",
-                content_html="<p>Full HTML body…</p>",
-                content_text="Full plain-text body…",
-                summary="Short teaser",
-                author=Author(name="Jane Doe"),
-                published_at=datetime.now(timezone.utc),
-                categories=["example"],
-                metadata={"feed_url": self.config.source_id},
-            )
-            yield doc
-            yielded += 1
-            if self.config.limit is not None and yielded >= self.config.limit:
-                return
-```
-
-Register it:
-
-```python
-# src/scraper/connectors/__init__.py
-from scraper.connectors import substack as _substack  # noqa: F401
-from scraper.connectors import example_rss as _example_rss  # noqa: F401
-```
-
-Use it:
+## Embedding
 
 ```bash
-scraper connectors
-scraper scrape example_rss https://example.com/feed.xml --limit 5
-scraper list-docs --source example_rss -n 5
+scraper embed --limit 20
+scraper embed --retry-failed
+scraper embed --force --source substack
+scraper embed-status
 ```
 
-### Field guide (`ContentDocument`)
+Pipeline per doc: adapter → chunk (head + body windows) → Gemini document embeddings → optional LLM facets → Qdrant upsert → Mongo `embedding_status=ready`.
 
-**Required for a useful row**
+## Query engine
 
-| Field | Notes |
-|-------|--------|
-| `source` | Must equal `self.name` |
-| `external_id` | Stable unique id within that source (post id, guid, slug). Used for upserts |
-| `title` | Display title |
-| Prefer at least one of | `content` / `content_text` / `content_html` (full article for embeddings) |
-
-**Strongly recommended**
-
-| Field | Notes |
-|-------|--------|
-| `url` / `canonical_url` | Permalink |
-| `embed_url` | If the platform has an embeddable URL |
-| `author` | `Author(name=…)` at minimum |
-| `published_at` | Timezone-aware `datetime` |
-| `summary` | Short teaser when full body is huge or paywalled |
-| `categories` / `tags` | For filtering later |
-
-**Optional / source-specific**
-
-| Field | Notes |
-|-------|--------|
-| `metadata` | Small dict only (slug, feed url, is_paid, …). Do **not** dump entire API responses |
-| `raw` | Available on the model but **not persisted** to Mongo |
-| `embedding_*` | Leave defaults; vector pipeline fills later |
-
-`to_mongo()` drops nulls/blanks — only set fields you have.
-
-### Config knobs (`ConnectorConfig`)
-
-| Attr | Use |
-|------|-----|
-| `source_id` | Whatever your connector needs (URL, handle, channel id) |
-| `limit` / `offset` | Pagination / “latest N” |
-| `fetch_full_content` | Skip expensive detail fetches when `False` |
-| `extras` | Free-form dict for connector-specific options |
-
-Override `validate_config()` to fail fast on bad `source_id`.
-
-### Conventions
-
-- **Be polite:** respect `settings.request_delay_seconds` between requests; set a clear `User-Agent`.
-- **Retries:** use `tenacity` (see Substack connector) for transient HTTP failures.
-- **Idempotent upserts:** same `(source, external_id)` overwrites; never invent random ids per run.
-- **Full article when possible:** recommendation/embedding work needs `content` / `content_html`, not teasers alone.
-- **Paywalls / ToS:** only scrape what the source allows publicly; document limitations in the connector docstring.
-- **No publication-only rows:** store articles/posts. Discovery helpers (like Substack leaderboards) should resolve to scrape targets, not Mongo blog cards.
-
-### Optional: discovery helpers
-
-If your source has a “trending” or directory API, add `src/scraper/discovery/<name>.py` that returns lightweight targets (see `BlogTarget` in `discovery/substack.py`), then wire a CLI command that loops `run_scrape("<connector>", target_id, …)`. Keep discovery out of the `posts` collection.
-
-### Tests
-
-Add focused unit tests (no network) for URL parsing and document mapping:
-
-```python
-# tests/test_example_rss.py
-from scraper.connectors import get_connector, list_connectors
-from scraper.connectors.base import ConnectorConfig
-
-def test_registered():
-    assert "example_rss" in {c["name"] for c in list_connectors()}
-
-def test_validate_rejects_non_url():
-    try:
-        get_connector("example_rss", ConnectorConfig(source_id="not-a-url"))
-        assert False, "expected ValueError"
-    except ValueError:
-        pass
+```bash
+scraper search "systems design essays" -k 10
+scraper similar <mongo_post_object_id> -k 5
 ```
 
-Run: `make test` / `make lint`.
+Two-stage: ANN on `doc`/`facet` → fetch `chunks` → weighted MaxSim − negative penalty × recency → author diversity → MMR. Optional `--explain` LLM rerank.
+
+## User profile & feedback
+
+Layered signals (implicit volume + explicit precision + reason chips):
+
+| Event | Weight (default) |
+|-------|------------------|
+| `like` strength 1/2 | 0.7 / 1.0 |
+| `save` | 1.0 |
+| `dwell` (read_ratio≥0.15) | read_ratio×0.6 |
+| fast skip (`impression` <1s) | −0.1 |
+| `not_interested` 1/2 | −0.6 / −1.0 |
+| `pairwise` winner/loser | +0.5 / −0.3 |
+
+Swipe `hold_ms` is **stored** for offline analysis but **not** used by the live weight table. Compare with:
+
+```bash
+scraper eval --weights default
+scraper reweigh --weights hold_linear
+```
+
+```bash
+scraper event demo <post_id> like --strength 2
+scraper feed demo -k 10 --explain
+scraper persona demo --refresh
+```
+
+API (see `/docs`): `POST /search`, `GET /posts/{id}/similar`, `GET /users/{id}/feed`, `GET /users/{id}/pair`, `POST /users/{id}/events`, `POST /users/{id}/tune`, `POST /users/{id}/onboard`, `POST /users/{id}/persona/refresh`.
 
 ## Project layout
 
 ```text
-.
-├── Makefile
-├── README.md
-├── docker-compose.yml
-├── pyproject.toml
-├── .env.example
-├── scripts/mongo-init.js      # indexes on first boot
-└── src/scraper/
-    ├── cli.py                 # typer CLI
-    ├── config.py
-    ├── pipeline.py
-    ├── models/document.py     # ContentDocument schema
-    ├── storage/mongodb.py
-    ├── discovery/
-    │   └── substack.py        # blog targets for discover→scrape
-    └── connectors/
-        ├── base.py            # BaseConnector + ConnectorConfig
-        ├── registry.py
-        └── substack.py        # reference connector
+src/scraper/
+├── adapters/          # Mongo raw → EmbeddableContent
+├── embedding/         # chunker, facets, worker
+├── llm/gemini.py
+├── query/             # scoring, engine
+├── profile/           # weights, state, clusters, persona, service
+├── eval/offline.py
+├── api/app.py
+├── connectors/
+├── storage/           # mongodb, qdrant
+└── models/
 ```
-
-## Roadmap (later)
-
-- [ ] Embedding worker → write vectors to a vector DB (e.g. Qdrant / Pinecone)
-- [ ] Flip `embedding_status` from `pending` → `ready`
-- [ ] Recommendation API over embeddings + metadata filters
-- [ ] Additional connectors (RSS, Medium, X/Twitter, etc.)
 
 ## License
 

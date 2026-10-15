@@ -21,11 +21,49 @@ class Settings(BaseSettings):
     mongo_db: str = "content_scraper"
     mongo_collection: str = "posts"
     mongo_uri: str | None = None
+    mongo_users_collection: str = "users"
+    mongo_interactions_collection: str = "interactions"
 
     http_timeout_seconds: float = 30.0
     http_user_agent: str = "content-scraper/0.1 (+https://github.com/devrev/data)"
     request_delay_seconds: float = 0.5
     log_level: str = "INFO"
+
+    # Gemini
+    gemini_api_key: str | None = None
+    gemini_embedding_model: str = "gemini-embedding-2"
+    gemini_llm_model: str = "gemini-3.8-flash"
+    embedding_dim: int = 768
+    embed_concurrency: int = 4
+    facets_enabled: bool = True
+    embed_images: bool = False
+
+    # Qdrant
+    qdrant_url: str = "http://localhost:6333"
+    qdrant_api_key: str | None = None
+    qdrant_collection: str = "posts"
+
+    # Chunking
+    chunk_words: int = 300
+    chunk_overlap_words: int = 40
+    max_chunks_per_post: int = 32
+    min_body_words: int = 40
+
+    # Query engine
+    filter_k: int = 64
+    mmr_lambda: float = 0.7
+    author_diversity_cap: int = 3
+    recency_half_life_days: float = 30.0
+    negative_penalty_scale: float = 0.35
+
+    # Profile
+    interest_centroid_k: int = 6
+    persona_refresh_every: int = 10
+    weight_version: str = "default_v1"
+
+    # API
+    api_host: str = "0.0.0.0"
+    api_port: int = 8000
 
     def build_mongo_uri(self) -> str:
         if self.mongo_uri:

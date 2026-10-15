@@ -6,7 +6,6 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import Optional
 
 import typer
 from rich.console import Console
@@ -22,7 +21,7 @@ from scraper.storage.mongodb import MongoDocumentStore
 
 app = typer.Typer(
     name="scraper",
-    help="Multi-connector content scraper with MongoDB storage.",
+    help="Multi-connector content scraper with embeddings and recommendations.",
     no_args_is_help=True,
 )
 console = Console()
@@ -37,7 +36,7 @@ def _configure_logging(level: str) -> None:
 
 @app.callback()
 def main(
-    log_level: Optional[str] = typer.Option(
+    log_level: str | None = typer.Option(
         None,
         "--log-level",
         help="Override LOG_LEVEL from settings (DEBUG, INFO, WARNING, ERROR).",
@@ -100,7 +99,7 @@ def scrape_cmd(
         ...,
         help="Source identifier (Substack handle or publication URL).",
     ),
-    limit: Optional[int] = typer.Option(None, "--limit", "-n", help="Max posts to scrape."),
+    limit: int | None = typer.Option(None, "--limit", "-n", help="Max posts to scrape."),
     offset: int = typer.Option(0, "--offset", help="Pagination offset."),
     no_full: bool = typer.Option(
         False,
@@ -161,7 +160,7 @@ def discover_cmd(
         "-t",
         help="Leaderboard tier: rising | all | paid | free.",
     ),
-    category: Optional[list[str]] = typer.Option(
+    category: list[str] | None = typer.Option(
         None,
         "--category",
         "-c",
@@ -181,10 +180,7 @@ def discover_cmd(
     ),
     as_json: bool = typer.Option(False, "--json", help="Emit JSON instead of a table."),
 ) -> None:
-    """Find top blogs via leaderboards, then scrape their articles into MongoDB.
-
-    Blog/publication rows are not stored — only full posts.
-    """
+    """Find top blogs via leaderboards, then scrape their articles into MongoDB."""
     if connector.lower() != "substack":
         console.print(f"[red]Unsupported discover connector: {connector}[/red]")
         raise typer.Exit(2)
@@ -275,6 +271,230 @@ def discover_cmd(
             else "  |  dry-run (nothing written)"
         )
     )
+
+
+@app.command("adapt")
+def adapt_cmd(
+    source: str = typer.Argument(..., help="Source name, e.g. substack"),
+    external_id: str = typer.Argument(..., help="Post external_id"),
+) -> None:
+    """Dry-run content adapter: print EmbeddableContent or SkipReason."""
+    from scraper.adapters import get_adapter
+    from scraper.models.embeddable import SkipReason
+
+    with MongoDocumentStore() as store:
+        raw = store.get(source, external_id)
+        if not raw:
+            console.print(f"[red]Not found: {source}/{external_id}[/red]")
+            raise typer.Exit(1)
+        result = get_adapter(source).adapt(raw)
+        if isinstance(result, SkipReason):
+            console.print(f"[yellow]SkipReason: {result.value}[/yellow]")
+            raise typer.Exit(0)
+        console.print_json(result.model_dump_json())
+
+
+@app.command("embed")
+def embed_cmd(
+    limit: int | None = typer.Option(None, "--limit", "-n"),
+    source: str | None = typer.Option(None, "--source", "-s"),
+    retry_failed: bool = typer.Option(False, "--retry-failed"),
+    force: bool = typer.Option(False, "--force", help="Re-embed even if ready."),
+) -> None:
+    """Embed pending posts into Qdrant."""
+    from scraper.embedding.worker import run_embed
+
+    summary = run_embed(
+        limit=limit, source=source, retry_failed=retry_failed, force=force
+    )
+    console.print_json(json.dumps(summary))
+
+
+@app.command("embed-status")
+def embed_status_cmd(
+    source: str | None = typer.Option(None, "--source", "-s"),
+) -> None:
+    """Show embedding status counts."""
+    with MongoDocumentStore() as store:
+        stats = store.embedding_stats(source)
+        console.print_json(json.dumps(stats))
+
+
+@app.command("search")
+def search_cmd(
+    query: str = typer.Argument(..., help="Search text"),
+    k: int = typer.Option(10, "--k", "-k"),
+    source: str | None = typer.Option(None, "--source", "-s"),
+    explain: bool = typer.Option(False, "--explain"),
+) -> None:
+    """Semantic search over embedded posts."""
+    from scraper.query.engine import RecommendationEngine
+    from scraper.query.types import Filters
+
+    engine = RecommendationEngine()
+    filters = Filters(sources=[source]) if source else None
+    results = engine.search(query, k=k, filters=filters, explain=explain)
+    table = Table(title=f"Search: {query}")
+    table.add_column("score", justify="right")
+    table.add_column("title")
+    table.add_column("author")
+    table.add_column("why")
+    for r in results:
+        table.add_row(
+            f"{r.score:.3f}",
+            (r.payload.get("title") or r.post_id)[:60],
+            (r.payload.get("author_name") or "")[:24],
+            (r.reason or "")[:40],
+        )
+    console.print(table)
+
+
+@app.command("similar")
+def similar_cmd(
+    post_id: str = typer.Argument(..., help="Mongo post ObjectId or Qdrant point id"),
+    k: int = typer.Option(10, "--k", "-k"),
+) -> None:
+    """Find posts similar to a seed post."""
+    from scraper.query.engine import RecommendationEngine
+
+    engine = RecommendationEngine()
+    results = engine.similar(post_id, k=k)
+    console.print_json(json.dumps([r.model_dump() for r in results]))
+
+
+@app.command("serve")
+def serve_cmd(
+    host: str | None = typer.Option(None, "--host"),
+    port: int | None = typer.Option(None, "--port"),
+) -> None:
+    """Start the FastAPI recommendation server."""
+    import uvicorn
+
+    settings = get_settings()
+    uvicorn.run(
+        "scraper.api.app:app",
+        host=host or settings.api_host,
+        port=port or settings.api_port,
+        reload=False,
+    )
+
+
+@app.command("event")
+def event_cmd(
+    user: str = typer.Argument(...),
+    post_id: str = typer.Argument(...),
+    event: str = typer.Argument(..., help="like|not_interested|open|skip|save|dwell"),
+    strength: int = typer.Option(1, "--strength"),
+    hold_ms: int | None = typer.Option(None, "--hold-ms"),
+    reason: str | None = typer.Option(None, "--reason"),
+) -> None:
+    """Record a user interaction event."""
+    from scraper.models.user import EventType, FeedbackReason, Interaction
+    from scraper.profile.service import UserProfileService
+
+    mapping = {
+        "like": EventType.LIKE,
+        "dislike": EventType.NOT_INTERESTED,
+        "not_interested": EventType.NOT_INTERESTED,
+        "skip": EventType.IMPRESSION,
+        "open": EventType.OPEN,
+        "save": EventType.SAVE,
+        "dwell": EventType.DWELL,
+    }
+    if event not in mapping:
+        console.print(f"[red]Unknown event: {event}[/red]")
+        raise typer.Exit(2)
+    interaction = Interaction(
+        user_id=user,
+        post_id=post_id,
+        event=mapping[event],
+        strength=strength,
+        hold_ms=hold_ms,
+        reason=FeedbackReason(reason) if reason else None,
+        visible_ms=500 if event == "skip" else None,
+    )
+    profile = UserProfileService().record_event(interaction)
+    console.print_json(
+        json.dumps(
+            {
+                "user_id": profile.user_id,
+                "persona_version": profile.persona_version,
+                "positives": len(profile.positive_ids),
+                "negatives": len(profile.negative_ids),
+            }
+        )
+    )
+
+
+@app.command("feed")
+def feed_cmd(
+    user: str = typer.Argument(...),
+    k: int = typer.Option(10, "--k", "-k"),
+    explain: bool = typer.Option(False, "--explain"),
+) -> None:
+    """Personalized feed for a user."""
+    from scraper.profile.service import UserProfileService
+
+    results = UserProfileService().feed(user, k=k, explain=explain)
+    table = Table(title=f"Feed: {user}")
+    table.add_column("score", justify="right")
+    table.add_column("title")
+    table.add_column("why")
+    for r in results:
+        table.add_row(
+            f"{r.score:.3f}",
+            (r.payload.get("title") or r.post_id)[:60],
+            (r.reason or "")[:50],
+        )
+    console.print(table)
+
+
+@app.command("persona")
+def persona_cmd(
+    user: str = typer.Argument(...),
+    refresh: bool = typer.Option(False, "--refresh"),
+) -> None:
+    """Show or refresh a user's persona."""
+    from scraper.profile.service import UserProfileService
+
+    svc = UserProfileService()
+    profile = svc.refresh_persona(user) if refresh else svc.get_or_create(user)
+    console.print_json(profile.persona.model_dump_json())
+
+
+@app.command("eval")
+def eval_cmd(
+    k: int = typer.Option(10, "--k", "-k"),
+    weights: str = typer.Option("default", "--weights"),
+) -> None:
+    """Offline leave-last-out metrics + hold_ms correlation."""
+    from scraper.eval.offline import hold_ms_correlation_report, leave_last_out_metrics
+    from scraper.profile.service import UserProfileService
+
+    svc = UserProfileService()
+
+    def recommend_fn(user_id: str, k: int = 10, exclude_last: str | None = None):
+        results = svc.feed(user_id, k=k)
+        if exclude_last:
+            results = [r for r in results if r.post_id != exclude_last]
+        return results
+
+    with MongoDocumentStore() as store:
+        metrics = leave_last_out_metrics(store, recommend_fn=recommend_fn, k=k)
+        corr = hold_ms_correlation_report(store)
+        console.print_json(json.dumps({"weights": weights, **metrics, **corr}))
+
+
+@app.command("reweigh")
+def reweigh_cmd(
+    weights: str = typer.Option("default", "--weights"),
+) -> None:
+    """Recompute interaction weights from raw fields."""
+    from scraper.eval.offline import reweigh_interactions
+
+    with MongoDocumentStore() as store:
+        summary = reweigh_interactions(store, version=weights)
+        console.print_json(json.dumps(summary))
 
 
 if __name__ == "__main__":
