@@ -52,6 +52,40 @@ paths:
                 items:
                   $ref: "#/components/schemas/FeedCard"
 
+  /discover:
+    get:
+      operationId: discoverPosts
+      tags: [posts]
+      summary: Discover browse (popularity / recency)
+      description: Non-personalized listing of ready posts for the Discover tab.
+      parameters:
+        - name: k
+          in: query
+          schema:
+            type: integer
+            default: 40
+            minimum: 1
+            maximum: 100
+        - name: source
+          in: query
+          schema:
+            type: string
+          required: false
+        - name: ready_only
+          in: query
+          schema:
+            type: boolean
+            default: true
+      responses:
+        "200":
+          description: Discover feed cards
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/FeedCard"
+
   /posts:
     get:
       operationId: listPosts

@@ -203,6 +203,32 @@ class MongoDocumentStore:
         )
         yield from cursor
 
+    def list_discover(
+        self,
+        *,
+        limit: int = 40,
+        source: str | None = None,
+        ready_only: bool = True,
+    ) -> list[dict[str, Any]]:
+        """Popular / recent posts for the Discover tab."""
+        filt: dict[str, Any] = {}
+        if source:
+            filt["source"] = source
+        if ready_only:
+            filt["embedding_status"] = EmbeddingStatus.READY.value
+        cursor = (
+            self.collection.find(filt)
+            .sort(
+                [
+                    ("reaction_count", DESCENDING),
+                    ("published_at", DESCENDING),
+                    ("scraped_at", DESCENDING),
+                ]
+            )
+            .limit(limit)
+        )
+        return list(cursor)
+
     def count(self, source: str | None = None) -> int:
         filt: dict[str, Any] = {}
         if source:

@@ -75,6 +75,17 @@ make web-ui                   # aura-web :5173 (proxy /api → BFF)
 # Offline UI only: make web-ui-demo   # VITE_USE_DEMO=1
 ```
 
+### Manual smoke checklist
+
+1. `make scrape-substack SOURCE=platformer LIMIT=5 && make embed LIMIT=16`
+2. `make serve` + `make web-api` + `make web-ui`
+3. For You shows hydrated cards; open **Why this?** for `why`
+4. Resonate / banish updates signal; Discover lists popular/ready posts
+5. Create a short post → toast “indexing…” → later appears in search/Discover
+6. Waves icon → pairwise pick; **More like this** on a card
+7. Avatar copies anonymous `user_id`; `make web-ui-demo` still works offline
+
+
 ## Makefile targets
 
 | Target | Description |

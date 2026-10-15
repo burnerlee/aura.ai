@@ -19,3 +19,15 @@ export function getOrCreateUserId(): string {
     return "anonymous";
   }
 }
+
+/** Short label for avatar / toasts (first 2 + last 2 of uuid segment). */
+export function shortUserLabel(userId: string): string {
+  const compact = userId.replace(/-/g, "");
+  if (compact.length < 4) return compact.toUpperCase().padEnd(2, "X").slice(0, 2);
+  return (compact.slice(0, 1) + compact.slice(-1)).toUpperCase();
+}
+
+export function shortUserId(userId: string): string {
+  if (userId.length <= 12) return userId;
+  return `${userId.slice(0, 8)}…`;
+}

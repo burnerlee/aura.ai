@@ -9,7 +9,7 @@ from typing import Any
 from fastapi import BackgroundTasks, FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 
-from scraper.api.cards import FeedCard
+from scraper.api.cards import FeedCard, mongo_to_card
 from scraper.api.posts import (
     CreatePostRequest,
     CreatePostResponse,
@@ -109,6 +109,16 @@ def create_app(
         if store.get_by_id(post_id) is None:
             raise HTTPException(status_code=404, detail="Post not found")
         return embed_by_ids([post_id], store=store)
+
+    @app.get("/discover")
+    def discover(
+        k: int = 40,
+        source: str | None = None,
+        ready_only: bool = True,
+    ) -> list[FeedCard]:
+        """Popularity / recency browse (Discover tab) — not personalized ranking."""
+        docs = store.list_discover(limit=k, source=source, ready_only=ready_only)
+        return [mongo_to_card(doc) for doc in docs]
 
     @app.get("/users/{user_id}/feed")
     def feed(user_id: str, k: int = 10, explain: bool = False) -> list[FeedCard]:

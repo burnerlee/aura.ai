@@ -6,11 +6,14 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   createPost,
+  discoverPosts,
   getPost,
   getUserFeed,
+  getUserPair,
   onboardUser,
   postUserEvents,
   searchPosts,
+  similarPosts,
   tuneUser,
   type FeedCard,
 } from "@workspace/api-client-react";
@@ -44,6 +47,8 @@ export function useRecommendationFeed(demoPosts: FeedPost[]) {
   const [searchResults, setSearchResults] = useState<FeedPost[] | null>(null);
   const [searchWhy, setSearchWhy] = useState<Record<string, string>>({});
   const [localOverlay, setLocalOverlay] = useState<FeedPost[]>([]);
+  const [similarResults, setSimilarResults] = useState<FeedPost[] | null>(null);
+  const [similarSeedId, setSimilarSeedId] = useState<string | null>(null);
   const onboarded = useRef(false);
 
   const feedQuery = useQuery({
@@ -51,6 +56,13 @@ export function useRecommendationFeed(demoPosts: FeedPost[]) {
     queryFn: () => getUserFeed(userId, { k: 40, explain: true }),
     enabled: !demo,
     staleTime: 15_000,
+  });
+
+  const discoverQuery = useQuery({
+    queryKey: ["discover"],
+    queryFn: () => discoverPosts({ k: 40, ready_only: true }),
+    enabled: !demo,
+    staleTime: 30_000,
   });
 
   useEffect(() => {
@@ -74,6 +86,11 @@ export function useRecommendationFeed(demoPosts: FeedPost[]) {
     const ids = new Set(fromApi.map((p) => p.id));
     return [...localOverlay.filter((p) => !ids.has(p.id)), ...fromApi];
   }, [demo, demoPosts, feedQuery.data, localOverlay]);
+
+  const discoverPostsMapped = useMemo(() => {
+    if (demo) return demoPosts;
+    return discoverQuery.data ? cardsToPosts(discoverQuery.data) : [];
+  }, [demo, demoPosts, discoverQuery.data]);
 
   const whyById = useMemo(() => {
     if (demo) return {} as Record<string, string>;
@@ -154,6 +171,7 @@ export function useRecommendationFeed(demoPosts: FeedPost[]) {
                 ),
               );
               void queryClient.invalidateQueries({ queryKey: ["feed", userId] });
+              void queryClient.invalidateQueries({ queryKey: ["discover"] });
               break;
             }
           } catch {
@@ -175,18 +193,79 @@ export function useRecommendationFeed(demoPosts: FeedPost[]) {
     [demo, queryClient, userId],
   );
 
+  const fetchPair = useCallback(async (): Promise<FeedPost[]> => {
+    if (demo) {
+      return demoPosts.slice(0, 2);
+    }
+    const cards = await getUserPair(userId);
+    return cardsToPosts(cards).slice(0, 2);
+  }, [demo, demoPosts, userId]);
+
+  const preferPair = useCallback(
+    async (winner: FeedPost, loser: FeedPost) => {
+      if (demo) return;
+      await postUserEvents(userId, {
+        events: [
+          {
+            post_id: winner.id,
+            event: "pairwise",
+            pair_post_id: loser.id,
+          },
+          {
+            post_id: loser.id,
+            event: "pairwise",
+            pair_post_id: winner.id,
+            text: "loser",
+          },
+        ],
+      });
+      void queryClient.invalidateQueries({ queryKey: ["feed", userId] });
+    },
+    [demo, queryClient, userId],
+  );
+
+  const loadSimilar = useCallback(
+    async (post: FeedPost) => {
+      if (demo) {
+        const others = demoPosts.filter((p) => p.id !== post.id).slice(0, 8);
+        setSimilarSeedId(post.id);
+        setSimilarResults(others);
+        return others;
+      }
+      const cards = await similarPosts(post.id, { k: 8 });
+      const mapped = cardsToPosts(cards);
+      setSimilarSeedId(post.id);
+      setSimilarResults(mapped);
+      return mapped;
+    },
+    [demo, demoPosts],
+  );
+
+  const clearSimilar = useCallback(() => {
+    setSimilarResults(null);
+    setSimilarSeedId(null);
+  }, []);
+
   return {
     demo,
     userId,
     posts: remotePosts,
+    discoverPosts: discoverPostsMapped,
     searchResults,
+    similarResults,
+    similarSeedId,
     whyById,
     feedLoading: !demo && feedQuery.isLoading,
+    discoverLoading: !demo && discoverQuery.isLoading,
     feedError: !demo ? feedQuery.error : null,
     runSearch,
     recordFeedback,
     recordSave,
     publish,
     tune,
+    fetchPair,
+    preferPair,
+    loadSimilar,
+    clearSimilar,
   };
 }

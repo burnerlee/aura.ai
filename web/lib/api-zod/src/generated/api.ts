@@ -64,6 +64,54 @@ export const SearchPostsResponse = zod.array(SearchPostsResponseItem)
 
 
 /**
+ * Non-personalized listing of ready posts for the Discover tab.
+ * @summary Discover browse (popularity / recency)
+ */
+export const discoverPostsQueryKDefault = 40;
+export const discoverPostsQueryKMax = 100;
+
+export const discoverPostsQueryReadyOnlyDefault = true;
+
+export const DiscoverPostsQueryParams = zod.object({
+  "k": zod.coerce.number().int().min(1).max(discoverPostsQueryKMax).default(discoverPostsQueryKDefault),
+  "source": zod.coerce.string().optional(),
+  "ready_only": zod.coerce.boolean().default(discoverPostsQueryReadyOnlyDefault)
+})
+
+export const DiscoverPostsResponseItem = zod.object({
+  "id": zod.string().describe('MongoDB _id'),
+  "kind": zod.enum(['image', 'article', 'short', 'embed']),
+  "category": zod.string(),
+  "author": zod.object({
+  "name": zod.string(),
+  "handle": zod.string(),
+  "initials": zod.string(),
+  "avatar_color": zod.string().optional(),
+  "verified": zod.boolean().optional()
+}),
+  "published_at": zod.string(),
+  "title": zod.string().nullish(),
+  "body": zod.string(),
+  "image_url": zod.string().nullish(),
+  "image_alt": zod.string().nullish(),
+  "platform": zod.string().nullish(),
+  "embed_url": zod.string().nullish(),
+  "tags": zod.array(zod.string()),
+  "likes": zod.number().int(),
+  "comments": zod.number().int(),
+  "source": zod.string(),
+  "external_id": zod.string(),
+  "url": zod.string().nullish(),
+  "embedding_status": zod.string(),
+  "embedding_error": zod.string().nullish(),
+  "score": zod.number().nullish(),
+  "why": zod.string().nullish(),
+  "per_query_scores": zod.record(zod.string(), zod.number()).optional()
+})
+export const DiscoverPostsResponse = zod.array(DiscoverPostsResponseItem)
+
+
+/**
  * @summary Batch hydrate posts by Mongo ids
  */
 export const ListPostsQueryParams = zod.object({

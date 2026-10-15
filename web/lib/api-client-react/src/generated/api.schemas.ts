@@ -195,6 +195,16 @@ export interface PersonaVersionResponse {
   version: number;
 }
 
+export type DiscoverPostsParams = {
+/**
+ * @minimum 1
+ * @maximum 100
+ */
+k?: number;
+source?: string;
+ready_only?: boolean;
+};
+
 export type ListPostsParams = {
 ids?: string[];
 };

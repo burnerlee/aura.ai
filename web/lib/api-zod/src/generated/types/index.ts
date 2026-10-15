@@ -12,6 +12,7 @@ export * from './createPostRequest';
 export * from './createPostRequestCategory';
 export * from './createPostResponse';
 export * from './createPostResponseEmbeddingSummary';
+export * from './discoverPostsParams';
 export * from './embedSummary';
 export * from './errorDetail';
 export * from './eventIn';

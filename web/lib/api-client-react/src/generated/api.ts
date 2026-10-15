@@ -22,6 +22,7 @@ import type {
 import type {
   CreatePostRequest,
   CreatePostResponse,
+  DiscoverPostsParams,
   EmbedSummary,
   ErrorDetail,
   EventsRequest,
@@ -231,6 +232,91 @@ export const useSearchPosts = <TError = ErrorType<unknown>,
       > => {
       return useMutation(getSearchPostsMutationOptions(options));
     }
+
+export const getDiscoverPostsUrl = (params?: DiscoverPostsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/discover?${stringifiedParams}` : `/api/discover`
+}
+
+/**
+ * Non-personalized listing of ready posts for the Discover tab.
+ * @summary Discover browse (popularity / recency)
+ */
+export const discoverPosts = async (params?: DiscoverPostsParams, options?: Parameters<typeof customFetch>[1]): Promise<FeedCard[]> => {
+
+  return customFetch<FeedCard[]>(getDiscoverPostsUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getDiscoverPostsQueryKey = (params?: DiscoverPostsParams,) => {
+    return [
+    `/api/discover`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getDiscoverPostsQueryOptions = <TData = Awaited<ReturnType<typeof discoverPosts>>, TError = ErrorType<unknown>>(params?: DiscoverPostsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof discoverPosts>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getDiscoverPostsQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof discoverPosts>>> = ({ signal }) => discoverPosts(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof discoverPosts>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type DiscoverPostsQueryResult = NonNullable<Awaited<ReturnType<typeof discoverPosts>>>
+export type DiscoverPostsQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Discover browse (popularity / recency)
+ */
+
+export function useDiscoverPosts<TData = Awaited<ReturnType<typeof discoverPosts>>, TError = ErrorType<unknown>>(
+ params?: DiscoverPostsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof discoverPosts>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getDiscoverPostsQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
 
 export const getListPostsUrl = (params?: ListPostsParams,) => {
   const normalizedParams = new URLSearchParams();
