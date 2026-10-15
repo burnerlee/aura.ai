@@ -17,6 +17,9 @@
   "references": [
     {
       "path": "../../lib/aura-shared"
+    },
+    {
+      "path": "../../lib/api-client-react"
     }
   ]
 }

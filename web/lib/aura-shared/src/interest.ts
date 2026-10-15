@@ -1,3 +1,7 @@
+/*
+ * Copyright (c) 2026 DevRev Inc. All rights reserved.
+ */
+
 import {
   CATEGORY_IDS,
   type FeedPost,
@@ -5,11 +9,13 @@ import {
   type InterestProfile,
   type InterestVector,
   type ScrapedContentDocument,
+  type SeedCategoryId,
 } from "./types";
+import { themeMeta } from "./themes";
 
 export const CATEGORIES = [
   {
-    id: "cyberpunk",
+    id: "cyberpunk" as const,
     label: "Cyberpunk",
     shortLabel: "Cyberpunk",
     color: "#22d3ee",
@@ -28,7 +34,7 @@ export const CATEGORIES = [
     ],
   },
   {
-    id: "ai",
+    id: "ai" as const,
     label: "AI & machine learning",
     shortLabel: "AI / ML",
     color: "#a855f7",
@@ -49,7 +55,7 @@ export const CATEGORIES = [
     ],
   },
   {
-    id: "space",
+    id: "space" as const,
     label: "Astrophysics & space",
     shortLabel: "Space",
     color: "#f59e0b",
@@ -69,7 +75,7 @@ export const CATEGORIES = [
     ],
   },
   {
-    id: "culture",
+    id: "culture" as const,
     label: "Indie pop & culture",
     shortLabel: "Indie Pop",
     color: "#f43f5e",
@@ -120,25 +126,18 @@ function appearsNegated(
   return { negated: true, hard: HARD_NEGATIONS.has(match[1].toLowerCase()) };
 }
 
-function normalizeVector(
-  raw: Record<InterestCategoryId, number>,
-): InterestVector {
-  const safe = CATEGORY_IDS.map((id) => Math.max(0.025, raw[id]));
+export function normalizeVector(raw: InterestVector): InterestVector {
+  const keys = Object.keys(raw);
+  if (keys.length === 0) {
+    return { ...INITIAL_PROFILE.vector };
+  }
+  const safe = keys.map((id) => Math.max(0.025, raw[id] ?? 0));
   const total = safe.reduce((sum, value) => sum + value, 0);
   const rounded = safe.map((value) => Math.round((value / total) * 1000) / 10);
-  rounded[0] =
-    Math.round(
-      (rounded[0] +
-        Math.round((100 - rounded.reduce((sum, value) => sum + value, 0)) * 10) /
-          10) *
-        10,
-    ) / 10;
-  return {
-    cyberpunk: rounded[0],
-    ai: rounded[1],
-    space: rounded[2],
-    culture: rounded[3],
-  };
+  const drift =
+    Math.round((100 - rounded.reduce((sum, value) => sum + value, 0)) * 10) / 10;
+  rounded[0] = Math.round((rounded[0] + drift) * 10) / 10;
+  return Object.fromEntries(keys.map((id, index) => [id, rounded[index]]));
 }
 
 export function parseInterestPrompt(prompt: string): InterestProfile {
@@ -146,7 +145,7 @@ export function parseInterestPrompt(prompt: string): InterestProfile {
   const lower = normalizedPrompt.toLowerCase();
   const raw = Object.fromEntries(
     CATEGORY_IDS.map((id) => [id, 0.7]),
-  ) as Record<InterestCategoryId, number>;
+  ) as Record<SeedCategoryId, number>;
   const excludedCategories: InterestCategoryId[] = [];
   let hasKnownTerms = false;
 
@@ -186,26 +185,44 @@ export function parseInterestPrompt(prompt: string): InterestProfile {
   };
 }
 
+/** Fold live post themes into the interest vector without dropping seed weights. */
+export function mergeThemesIntoVector(
+  vector: InterestVector,
+  themeIds: InterestCategoryId[],
+): InterestVector {
+  const next = { ...vector };
+  for (const id of themeIds) {
+    const key = id.trim();
+    if (!key || key in next) continue;
+    next[key] = 8;
+  }
+  return normalizeVector(next);
+}
+
 export function adjustInterestVector(
   vector: InterestVector,
   category: InterestCategoryId,
   direction: "up" | "down",
 ): InterestVector {
-  const current = Object.fromEntries(
-    CATEGORY_IDS.map((id) => [id, Math.max(0.1, vector[id])]),
-  ) as Record<InterestCategoryId, number>;
+  const keys = Object.keys(vector).length ? Object.keys(vector) : [...CATEGORY_IDS];
+  const current: InterestVector = Object.fromEntries(
+    keys.map((id) => [id, Math.max(0.1, vector[id] ?? 0.1)]),
+  );
+  if (!(category in current)) current[category] = 8;
+  const ids = Object.keys(current);
   const nextTarget = Math.max(
     2.5,
     Math.min(80, current[category] + (direction === "up" ? 7 : -7)),
   );
-  const otherTotal = CATEGORY_IDS.filter((id) => id !== category).reduce(
-    (sum, id) => sum + current[id],
-    0,
-  );
+  const otherTotal = ids
+    .filter((id) => id !== category)
+    .reduce((sum, id) => sum + current[id], 0);
   const next = { ...current, [category]: nextTarget };
   const remaining = 100 - nextTarget;
-  for (const id of CATEGORY_IDS) {
-    if (id !== category) next[id] = (current[id] / otherTotal) * remaining;
+  for (const id of ids) {
+    if (id !== category) {
+      next[id] = otherTotal > 0 ? (current[id] / otherTotal) * remaining : remaining / (ids.length - 1);
+    }
   }
   return normalizeVector(next);
 }
@@ -230,37 +247,64 @@ export function classifyCategory(text: string): InterestCategoryId {
 
 export function scorePost(post: FeedPost, profile: InterestProfile): number {
   if (profile.excludedCategories.includes(post.category)) return 0;
-  const total = CATEGORY_IDS.reduce((sum, id) => sum + profile.vector[id], 0) || 100;
-  const categoryShare = profile.vector[post.category] / total;
+  const ids = Object.keys(profile.vector);
+  const total = ids.reduce((sum, id) => sum + (profile.vector[id] ?? 0), 0) || 100;
+  const categoryKey = post.category?.trim() || "";
+  let categoryShare = (profile.vector[categoryKey] ?? 0) / total;
+  // Soft-match free-form facet labels against profile theme keys.
+  if (categoryShare < 0.02 && categoryKey) {
+    const lower = categoryKey.toLowerCase();
+    let best = 0;
+    for (const [id, weight] of Object.entries(profile.vector)) {
+      const lid = id.toLowerCase();
+      if (lower.includes(lid) || lid.includes(lower)) {
+        best = Math.max(best, weight / total);
+      }
+    }
+    categoryShare = best;
+  }
   const text = `${post.title ?? ""} ${post.body} ${post.tags.join(" ")}`.toLowerCase();
-  const keywords = CATEGORIES.find((item) => item.id === post.category)?.keywords ?? [];
-  return Math.min(
-    1,
-    categoryShare +
-      Math.min(
-        0.18,
-        keywords.filter((word) => hasKeyword(text, word)).length * 0.035,
-      ),
+  const keywords = themeMeta(post.category).keywords;
+  const keywordBoost = Math.min(
+    0.18,
+    keywords.filter((word) => hasKeyword(text, word)).length * 0.035,
   );
+  // Always give a small floor so ranked lists stay populated; excluded above.
+  return Math.min(1, Math.max(0.05, categoryShare + keywordBoost));
+}
+
+/** 0–100 match percentage driven by the user interest profile (or API score). */
+export function matchPercent(post: FeedPost, profile: InterestProfile): number {
+  return Math.round(scorePost(post, profile) * 100);
 }
 
 export function rankPosts(posts: FeedPost[], profile: InterestProfile): FeedPost[] {
   return posts
-    .map((post) => ({ post, score: scorePost(post, profile) }))
-    .filter((item) => item.score >= 0.045)
+    .map((post) => {
+      // API feed scores are profile-powered; prefer them for ordering when present.
+      const api = post.matchScore;
+      const score =
+        typeof api === "number" && Number.isFinite(api) && api > 0
+          ? api
+          : scorePost(post, profile);
+      return { post, score };
+    })
+    .filter((item) => item.score >= 0.045 || (item.post.matchScore ?? 0) > 0)
     .sort((a, b) => b.score - a.score)
     .map((item) => item.post);
 }
 
 export function explainPostMatch(post: FeedPost, profile: InterestProfile): string {
-  const category = CATEGORIES.find((item) => item.id === post.category);
-  const share = Math.round(profile.vector[post.category]);
+  const category = themeMeta(post.category);
+  const match = matchPercent(post, profile);
+  const share = Math.round(profile.vector[post.category] ?? 0);
   const matchingTag = post.tags.find((tag) =>
-    category?.keywords.some((keyword) => tag.toLowerCase().includes(keyword)),
+    category.keywords.some((keyword) => tag.toLowerCase().includes(keyword)),
   );
-  return matchingTag
-    ? `This matches your ${category?.label.toLowerCase()} signal (${share}%) through “${matchingTag}”.`
-    : `This landed in ${category?.label.toLowerCase()}, currently ${share}% of your Interest DNA.`;
+  if (matchingTag) {
+    return `About ${match}% match — your ${category.label.toLowerCase()} signal (${share}% of DNA) via “${matchingTag}”.`;
+  }
+  return `About ${match}% match with your profile. Filed under ${category.label.toLowerCase()} (${share}% of Interest DNA).`;
 }
 
 export function mapScrapedDocumentToPost(document: ScrapedContentDocument): FeedPost {

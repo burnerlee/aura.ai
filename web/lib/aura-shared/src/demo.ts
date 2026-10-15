@@ -40,6 +40,7 @@ export const DEMO_POSTS: FeedPost[] = [
     publishedAt: "42 min ago",
     title: "Small models, strange minds",
     body: "What changes when intelligence is no longer one giant destination, but a thousand tiny tools running close to the work?",
+    url: "https://thegradient.pub/",
     tags: ["machine learning", "systems", "deep tech"],
     likes: 192,
     comments: 31,

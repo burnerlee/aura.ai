@@ -262,6 +262,21 @@
 }
 .aura-app.aura-glass .glass-open-original { color: #a6a4ae; }
 .aura-app.aura-glass .glass-open-original:hover { color: #69e6f4; }
+.aura-app.aura-glass .post-title-link:hover { color: #69e6f4; }
+.aura-app.aura-glass .post-open-source { color: #69e6f4; }
+.aura-app.aura-glass .dna-center-delta.plus,
+.aura-app.aura-glass .aura-row-delta.plus,
+.aura-app.aura-glass .rail-category.rail-hit-plus small { color: #69e6f4; }
+.aura-app.aura-glass .interest-panel.aura-burst-plus {
+  box-shadow: 0 0 0 1px rgba(34, 211, 238, .28), 0 12px 40px rgba(34, 211, 238, .08);
+}
+.aura-app.aura-glass .aura-fly-chip.plus { color: #b8f4ff; }
+.aura-app.aura-glass .post-meta-row { gap: 8px; }
+.aura-app.aura-glass .match-chip {
+  border-color: rgba(155, 233, 197, 0.28);
+  color: #d4efe0;
+  background: rgba(155, 233, 197, 0.1);
+}
 .aura-app.aura-glass .post-tags { gap: 8px; }
 .aura-app.aura-glass .post-tags span { color: #8a8792; }
 .aura-app.aura-glass .insight-panel {
@@ -357,6 +372,23 @@
   box-shadow: 0 30px 110px rgba(0, 0, 0, .62), inset 0 1px 0 rgba(255, 255, 255, .055);
   backdrop-filter: blur(42px) saturate(125%);
   -webkit-backdrop-filter: blur(42px) saturate(125%);
+}
+.aura-app.aura-glass .modal-card.aura-chat-modal {
+  height: min(88dvh, 680px);
+  max-height: min(88dvh, 680px);
+  overflow: hidden;
+}
+.aura-app.aura-glass .aura-chat-thread {
+  background: rgba(8, 8, 12, .45);
+  border-color: rgba(255, 255, 255, .08);
+}
+.aura-app.aura-glass .aura-chat-dock {
+  border-top-color: rgba(255, 255, 255, .08);
+  background: linear-gradient(180deg, rgba(18, 16, 24, .15), rgba(14, 12, 20, .92));
+}
+.aura-app.aura-glass .aura-profile-preview {
+  border-color: rgba(155, 233, 197, .2);
+  background: rgba(155, 233, 197, .06);
 }
 .aura-app.aura-glass .modal-title-icon {
   border-color: rgba(168, 85, 247, .2);
@@ -508,6 +540,12 @@
   .aura-app.aura-glass .mobile-nav { height: 68px; }
   .aura-app.aura-glass .modal-backdrop { padding: 10px; }
   .aura-app.aura-glass .modal-card { max-height: 94dvh; padding: 19px; }
+  .aura-app.aura-glass .modal-card.aura-chat-modal {
+    height: min(92dvh, 720px);
+    max-height: min(92dvh, 720px);
+    overflow: hidden;
+    padding: 16px 14px 12px;
+  }
   .aura-app.aura-glass .modal-header h2 { font-size: 17px; }
   .aura-app.aura-glass .composer-tabs { gap: 2px; }
   .aura-app.aura-glass .composer-tab { gap: 5px; padding: 7px 8px; font-size: 9px; }

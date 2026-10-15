@@ -1,6 +1,13 @@
+/*
+ * Copyright (c) 2026 DevRev Inc. All rights reserved.
+ */
+
+/** Seed theme ids used by the demo feed + interest prompt mapper. */
 export const CATEGORY_IDS = ["cyberpunk", "ai", "space", "culture"] as const;
 
-export type InterestCategoryId = (typeof CATEGORY_IDS)[number];
+export type SeedCategoryId = (typeof CATEGORY_IDS)[number];
+/** Live themes are free-form facet topics; seed ids remain valid. */
+export type InterestCategoryId = string;
 export type PostKind = "image" | "article" | "short" | "embed";
 export type FeedbackDirection = "resonate" | "banish";
 
@@ -12,12 +19,8 @@ export interface CategoryMeta {
   keywords: readonly string[];
 }
 
-export interface InterestVector {
-  cyberpunk: number;
-  ai: number;
-  space: number;
-  culture: number;
-}
+/** Sparse interest weights keyed by theme id / facet topic. */
+export type InterestVector = Record<string, number>;
 
 export interface InterestProfile {
   prompt: string;
@@ -44,10 +47,14 @@ export interface FeedPost {
   imageUrl?: string;
   imageAlt?: string;
   platform?: "Substack" | "X" | "Reddit";
+  /** Original source URL (blog / article). Prefer this for “open”. */
+  url?: string;
   embedUrl?: string;
   tags: string[];
   likes: number;
   comments: number;
+  /** Optional 0–1 recommendation score from the profile-powered API. */
+  matchScore?: number;
   resonated?: boolean;
   banished?: boolean;
 }

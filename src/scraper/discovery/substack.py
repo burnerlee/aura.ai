@@ -103,7 +103,11 @@ class SubstackDiscovery:
         if delay > 0:
             time.sleep(delay)
 
-    @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=1, max=8), reraise=True)
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=1, max=8),
+        reraise=True,
+    )
     def _list_categories(self, client: httpx.Client) -> list[dict[str, Any]]:
         url = f"{SUBSTACK_ROOT}/api/v1/categories"
         resp = client.get(url)
@@ -144,7 +148,11 @@ class SubstackDiscovery:
 
         return selected
 
-    @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=1, max=8), reraise=True)
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=1, max=8),
+        reraise=True,
+    )
     def _fetch_page(
         self,
         client: httpx.Client,

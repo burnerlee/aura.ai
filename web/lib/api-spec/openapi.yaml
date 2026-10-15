@@ -3,13 +3,19 @@ info:
   # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
-  description: API specification
+  description: Aura recommendation API (BFF → Python FastAPI)
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
     description: Health operations
+  - name: posts
+    description: Post hydrate, create, and embed
+  - name: search
+    description: Semantic search
+  - name: users
+    description: Feed, events, persona, onboard
 paths:
   /healthz:
     get:
@@ -24,7 +30,372 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+
+  /search:
+    post:
+      operationId: searchPosts
+      tags: [search]
+      summary: Semantic search
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SearchRequest"
+      responses:
+        "200":
+          description: Ranked feed cards
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/FeedCard"
+
+  /discover:
+    get:
+      operationId: discoverPosts
+      tags: [posts]
+      summary: Discover browse (popularity / recency)
+      description: Non-personalized listing of ready posts for the Discover tab.
+      parameters:
+        - name: k
+          in: query
+          schema:
+            type: integer
+            default: 40
+            minimum: 1
+            maximum: 100
+        - name: source
+          in: query
+          schema:
+            type: string
+          required: false
+        - name: ready_only
+          in: query
+          schema:
+            type: boolean
+            default: true
+      responses:
+        "200":
+          description: Discover feed cards
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/FeedCard"
+
+  /posts:
+    get:
+      operationId: listPosts
+      tags: [posts]
+      summary: Batch hydrate posts by Mongo ids
+      parameters:
+        - name: ids
+          in: query
+          required: false
+          schema:
+            type: array
+            items:
+              type: string
+          style: form
+          explode: true
+      responses:
+        "200":
+          description: Feed cards
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/FeedCard"
+    post:
+      operationId: createPost
+      tags: [posts]
+      summary: Create a user-generated post and queue embedding
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreatePostRequest"
+      responses:
+        "200":
+          description: Created post card
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CreatePostResponse"
+        "400":
+          description: Invalid create payload
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorDetail"
+
+  /posts/{postId}:
+    get:
+      operationId: getPost
+      tags: [posts]
+      summary: Get a hydrated post card
+      parameters:
+        - $ref: "#/components/parameters/PostId"
+      responses:
+        "200":
+          description: Feed card
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FeedCard"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorDetail"
+
+  /posts/{postId}/similar:
+    get:
+      operationId: similarPosts
+      tags: [posts]
+      summary: Similar posts
+      parameters:
+        - $ref: "#/components/parameters/PostId"
+        - name: k
+          in: query
+          schema:
+            type: integer
+            default: 10
+            minimum: 1
+            maximum: 100
+      responses:
+        "200":
+          description: Similar feed cards
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/FeedCard"
+
+  /posts/{postId}/embed:
+    post:
+      operationId: embedPost
+      tags: [posts]
+      summary: Embed (or re-embed) a single post
+      parameters:
+        - $ref: "#/components/parameters/PostId"
+      responses:
+        "200":
+          description: Embed summary
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmbedSummary"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorDetail"
+
+  /users/{userId}/feed:
+    get:
+      operationId: getUserFeed
+      tags: [users]
+      summary: Personalized For You feed
+      parameters:
+        - $ref: "#/components/parameters/UserId"
+        - name: k
+          in: query
+          schema:
+            type: integer
+            default: 10
+            minimum: 1
+            maximum: 100
+        - name: explain
+          in: query
+          schema:
+            type: boolean
+            default: false
+      responses:
+        "200":
+          description: Ranked feed cards
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/FeedCard"
+
+  /users/{userId}/pair:
+    get:
+      operationId: getUserPair
+      tags: [users]
+      summary: Pairwise comparison candidates
+      parameters:
+        - $ref: "#/components/parameters/UserId"
+      responses:
+        "200":
+          description: Pair of feed cards
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/FeedCard"
+
+  /users/{userId}/events:
+    post:
+      operationId: postUserEvents
+      tags: [users]
+      summary: Record interaction events
+      description: |
+        UI mapping — resonate → like, banish → not_interested, bookmark → save.
+        post_id must be the Mongo _id from FeedCard.id.
+      parameters:
+        - $ref: "#/components/parameters/UserId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EventsRequest"
+      responses:
+        "200":
+          description: Events accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EventsResponse"
+
+  /users/{userId}/tune:
+    post:
+      operationId: tuneUser
+      tags: [users]
+      summary: Natural-language interest tune
+      parameters:
+        - $ref: "#/components/parameters/UserId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TuneRequest"
+      responses:
+        "200":
+          description: Updated persona
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PersonaVersionResponse"
+
+  /users/{userId}/profile:
+    get:
+      operationId: getUserProfile
+      tags: [users]
+      summary: Get or create user profile
+      parameters:
+        - $ref: "#/components/parameters/UserId"
+      responses:
+        "200":
+          description: User profile dump
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+
+  /users/{userId}/onboard:
+    post:
+      operationId: onboardUser
+      tags: [users]
+      summary: Onboard a user with free text and/or seed posts
+      parameters:
+        - $ref: "#/components/parameters/UserId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OnboardRequest"
+      responses:
+        "200":
+          description: Persona after onboard
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Persona"
+        "500":
+          description: Onboard failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorDetail"
+
+  /users/{userId}/persona/refresh:
+    post:
+      operationId: refreshPersona
+      tags: [users]
+      summary: Refresh LLM persona from profile state
+      parameters:
+        - $ref: "#/components/parameters/UserId"
+      responses:
+        "200":
+          description: Refreshed persona
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PersonaVersionResponse"
+
+  /users/{userId}/aura/chat:
+    post:
+      operationId: chatWithAura
+      tags: [users]
+      summary: Conversational personalization with Aura
+      description: |
+        Aura interviews the user with questions and tap options, suggests themes,
+        and optionally applies a generated interest profile (apply=true when ready).
+      parameters:
+        - $ref: "#/components/parameters/UserId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AuraChatRequest"
+      responses:
+        "200":
+          description: Next Aura turn (message, options, optional profile)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuraChatResponse"
+        "500":
+          description: Chat failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorDetail"
+
 components:
+  parameters:
+    PostId:
+      name: postId
+      in: path
+      required: true
+      schema:
+        type: string
+      description: MongoDB post _id
+    UserId:
+      name: userId
+      in: path
+      required: true
+      schema:
+        type: string
+      description: Client-owned anonymous or auth user id
+
   schemas:
     HealthStatus:
       type: object
@@ -34,3 +405,434 @@ components:
       required:
         - status
 
+    ErrorDetail:
+      type: object
+      properties:
+        detail:
+          type: string
+      required:
+        - detail
+
+    PostKind:
+      type: string
+      enum: [image, article, short, embed]
+
+    CardAuthor:
+      type: object
+      properties:
+        name:
+          type: string
+        handle:
+          type: string
+        initials:
+          type: string
+        avatar_color:
+          type: string
+        verified:
+          type: boolean
+      required: [name, handle, initials]
+
+    FeedCard:
+      type: object
+      properties:
+        id:
+          type: string
+          description: MongoDB _id
+        kind:
+          $ref: "#/components/schemas/PostKind"
+        category:
+          type: string
+        author:
+          $ref: "#/components/schemas/CardAuthor"
+        published_at:
+          type: string
+        title:
+          type: string
+          nullable: true
+        body:
+          type: string
+        image_url:
+          type: string
+          nullable: true
+        image_alt:
+          type: string
+          nullable: true
+        platform:
+          type: string
+          nullable: true
+        embed_url:
+          type: string
+          nullable: true
+        tags:
+          type: array
+          items:
+            type: string
+        likes:
+          type: integer
+        comments:
+          type: integer
+        source:
+          type: string
+        external_id:
+          type: string
+        url:
+          type: string
+          nullable: true
+        embedding_status:
+          type: string
+        embedding_error:
+          type: string
+          nullable: true
+        score:
+          type: number
+          nullable: true
+        why:
+          type: string
+          nullable: true
+        per_query_scores:
+          type: object
+          additionalProperties:
+            type: number
+      required:
+        - id
+        - kind
+        - category
+        - author
+        - published_at
+        - body
+        - tags
+        - likes
+        - comments
+        - source
+        - external_id
+        - embedding_status
+
+    SearchRequest:
+      type: object
+      properties:
+        query:
+          type: string
+        k:
+          type: integer
+          default: 10
+        sources:
+          type: array
+          items:
+            type: string
+          nullable: true
+        explain:
+          type: boolean
+          default: false
+      required: [query]
+
+    CreatePostRequest:
+      type: object
+      properties:
+        kind:
+          $ref: "#/components/schemas/PostKind"
+        title:
+          type: string
+          nullable: true
+        body:
+          type: string
+          default: ""
+        category:
+          type: string
+          description: Free-form theme label (facet topic or seed id)
+          default: General
+          maxLength: 64
+        embed_url:
+          type: string
+          nullable: true
+        platform:
+          type: string
+          nullable: true
+        image_url:
+          type: string
+          nullable: true
+        user_id:
+          type: string
+          nullable: true
+        author_name:
+          type: string
+          nullable: true
+        wait_for_embed:
+          type: boolean
+          default: false
+      required: [kind]
+
+    CreatePostResponse:
+      type: object
+      properties:
+        post:
+          $ref: "#/components/schemas/FeedCard"
+        embedding_summary:
+          type: object
+          additionalProperties: true
+          nullable: true
+      required: [post]
+
+    EmbedSummary:
+      type: object
+      additionalProperties: true
+      properties:
+        ready:
+          type: integer
+        skipped:
+          type: integer
+        failed:
+          type: integer
+        processed:
+          type: integer
+        missing:
+          type: integer
+
+    EventType:
+      type: string
+      enum:
+        - impression
+        - open
+        - dwell
+        - click_through
+        - share
+        - like
+        - not_interested
+        - save
+        - follow_author
+        - mute_author
+        - mute_source
+        - pairwise
+        - tune
+        - explanation_feedback
+
+    FeedbackReason:
+      type: string
+      enum:
+        - topic
+        - already_know
+        - too_long
+        - low_quality
+        - author
+        - tone
+        - style
+        - depth
+
+    EventIn:
+      type: object
+      properties:
+        post_id:
+          type: string
+          nullable: true
+        event:
+          $ref: "#/components/schemas/EventType"
+        strength:
+          type: integer
+          nullable: true
+        hold_ms:
+          type: integer
+          nullable: true
+        reason:
+          $ref: "#/components/schemas/FeedbackReason"
+        dwell_ms:
+          type: integer
+          nullable: true
+        visible_ms:
+          type: integer
+          nullable: true
+        scroll_depth:
+          type: number
+          nullable: true
+        completed:
+          type: boolean
+          nullable: true
+        read_ratio:
+          type: number
+          nullable: true
+        text:
+          type: string
+          nullable: true
+        pair_post_id:
+          type: string
+          nullable: true
+      required: [event]
+
+    EventsRequest:
+      type: object
+      properties:
+        events:
+          type: array
+          items:
+            $ref: "#/components/schemas/EventIn"
+      required: [events]
+
+    EventsResponse:
+      type: object
+      properties:
+        ok:
+          type: boolean
+        count:
+          type: integer
+        persona_version:
+          type: integer
+          nullable: true
+      required: [ok, count]
+
+    TuneRequest:
+      type: object
+      properties:
+        text:
+          type: string
+      required: [text]
+
+    OnboardRequest:
+      type: object
+      properties:
+        free_text:
+          type: string
+          nullable: true
+        seed_post_ids:
+          type: array
+          items:
+            type: string
+      required: []
+
+    AuraChatMessage:
+      type: object
+      properties:
+        role:
+          type: string
+          enum: [user, assistant]
+        content:
+          type: string
+      required: [role, content]
+
+    AuraChatRequest:
+      type: object
+      properties:
+        messages:
+          type: array
+          items:
+            $ref: "#/components/schemas/AuraChatMessage"
+        known_themes:
+          type: array
+          items:
+            type: string
+        apply:
+          type: boolean
+          default: false
+        profile:
+          allOf:
+            - $ref: "#/components/schemas/AuraProfileDraft"
+          nullable: true
+      required: []
+
+    AuraOption:
+      type: object
+      properties:
+        id:
+          type: string
+        label:
+          type: string
+      required: [id, label]
+
+    AuraProfileDraft:
+      type: object
+      properties:
+        prompt:
+          type: string
+        topics:
+          type: array
+          items:
+            type: string
+        anti_topics:
+          type: array
+          items:
+            type: string
+        themes:
+          type: array
+          items:
+            type: string
+        theme_weights:
+          type: object
+          additionalProperties:
+            type: number
+        preferred_styles:
+          type: array
+          items:
+            type: string
+        preferred_emotions:
+          type: array
+          items:
+            type: string
+
+    AuraChatResponse:
+      type: object
+      properties:
+        message:
+          type: string
+        options:
+          type: array
+          items:
+            $ref: "#/components/schemas/AuraOption"
+        suggested_themes:
+          type: array
+          items:
+            type: string
+        ready:
+          type: boolean
+        profile:
+          allOf:
+            - $ref: "#/components/schemas/AuraProfileDraft"
+          nullable: true
+        persona:
+          allOf:
+            - $ref: "#/components/schemas/Persona"
+          nullable: true
+        persona_version:
+          type: integer
+          nullable: true
+      required: [message]
+
+    BigFive:
+      type: object
+      properties:
+        openness:
+          type: number
+        conscientiousness:
+          type: number
+        extraversion:
+          type: number
+        neuroticism:
+          type: number
+        agreeableness:
+          type: number
+
+    Persona:
+      type: object
+      additionalProperties: true
+      properties:
+        summary:
+          type: string
+        topics:
+          type: array
+          items:
+            type: string
+        anti_topics:
+          type: array
+          items:
+            type: string
+        preferred_styles:
+          type: array
+          items:
+            type: string
+        big_five:
+          $ref: "#/components/schemas/BigFive"
+
+    PersonaVersionResponse:
+      type: object
+      properties:
+        persona:
+          $ref: "#/components/schemas/Persona"
+        version:
+          type: integer
+      required: [persona, version]

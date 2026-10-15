@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "content-scraper"
 version = "0.1.0"
-description = "Multi-connector content scraper with MongoDB storage"
+description = "Multi-connector content scraper with MongoDB storage, embeddings, and recommendations"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
@@ -19,6 +19,12 @@ dependencies = [
     "lxml>=5.1",
     "typer>=0.12",
     "rich>=13.7",
+    "google-genai>=1.0",
+    "litellm>=1.50",
+    "qdrant-client>=1.12",
+    "numpy>=1.26",
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.30",
 ]
 
 [project.optional-dependencies]
@@ -40,3 +46,7 @@ target-version = "py311"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]

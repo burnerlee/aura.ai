@@ -4,14 +4,12 @@
 
 from __future__ import annotations
 
-from typing import Type
-
 from scraper.connectors.base import BaseConnector, ConnectorConfig
 
-_REGISTRY: dict[str, Type[BaseConnector]] = {}
+_REGISTRY: dict[str, type[BaseConnector]] = {}
 
 
-def register_connector(cls: Type[BaseConnector]) -> Type[BaseConnector]:
+def register_connector(cls: type[BaseConnector]) -> type[BaseConnector]:
     key = cls.name.lower()
     if key in _REGISTRY:
         raise ValueError(f"Connector already registered: {key}")

@@ -145,8 +145,14 @@ class SubstackConnector(BaseConnector):
         if delay > 0:
             time.sleep(delay)
 
-    @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=1, max=8), reraise=True)
-    def _fetch_archive(self, client: httpx.Client, *, offset: int, limit: int) -> list[dict[str, Any]]:
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=1, max=8),
+        reraise=True,
+    )
+    def _fetch_archive(
+        self, client: httpx.Client, *, offset: int, limit: int
+    ) -> list[dict[str, Any]]:
         url = f"{self.base_url}/api/v1/archive"
         params = {"sort": "new", "offset": offset, "limit": limit}
         logger.debug("GET %s params=%s", url, params)
@@ -157,7 +163,11 @@ class SubstackConnector(BaseConnector):
             raise ValueError(f"Unexpected archive response type: {type(data)}")
         return data
 
-    @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=1, max=8), reraise=True)
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=1, max=8),
+        reraise=True,
+    )
     def _fetch_post(self, client: httpx.Client, slug: str) -> dict[str, Any] | None:
         url = f"{self.base_url}/api/v1/posts/{slug}"
         logger.debug("GET %s", url)

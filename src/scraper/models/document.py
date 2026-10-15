@@ -2,15 +2,17 @@
 
 """Canonical post document stored in MongoDB — shared by all connectors."""
 
-from datetime import datetime, timezone
-from enum import Enum
+from datetime import UTC, datetime
+from enum import Enum, StrEnum
 from typing import Any
 
 from pydantic import BaseModel, Field
 
+from scraper.models.facets import PostFacets
 
-class EmbeddingStatus(str, Enum):
-    """Lifecycle flag for future vector / recommendation pipeline."""
+
+class EmbeddingStatus(StrEnum):
+    """Lifecycle flag for vector / recommendation pipeline."""
 
     PENDING = "pending"
     READY = "ready"
@@ -62,6 +64,21 @@ class Author(BaseModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
+# Fields owned by the embedding pipeline — never overwritten by scrape upserts.
+EMBEDDING_OWNED_FIELDS = frozenset(
+    {
+        "embedding_status",
+        "embedding_id",
+        "embedding_model",
+        "embedded_at",
+        "embedding_error",
+        "content_hash",
+        "chunk_count",
+        "facets",
+    }
+)
+
+
 class ContentDocument(BaseModel):
     """Uniform record written by every connector into the ``posts`` collection.
 
@@ -97,7 +114,7 @@ class ContentDocument(BaseModel):
     # Timestamps
     published_at: datetime | None = None
     updated_at: datetime | None = None
-    scraped_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    scraped_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
     # Engagement / source extras
     word_count: int | None = None
@@ -107,18 +124,32 @@ class ContentDocument(BaseModel):
     # Intentionally not persisted by default — huge and noisy in Compass.
     raw: dict[str, Any] = Field(default_factory=dict, exclude=True)
 
-    # Future vector / recommendation hooks
+    # Vector / recommendation hooks
     embedding_status: EmbeddingStatus = EmbeddingStatus.PENDING
     embedding_id: str | None = None
     embedding_model: str | None = None
+    embedded_at: datetime | None = None
+    embedding_error: str | None = None
+    content_hash: str | None = None
+    chunk_count: int | None = None
+    facets: PostFacets | None = None
 
     def mongo_key(self) -> dict[str, str]:
         return {"source": self.source, "external_id": self.external_id}
 
+    def scraped_fields(self) -> dict[str, Any]:
+        """Fields owned by the scraper (excludes embedding-owned keys)."""
+        payload = self.model_dump(mode="python", exclude_none=True, exclude={"raw"})
+        for key in EMBEDDING_OWNED_FIELDS:
+            payload.pop(key, None)
+        cleaned = _prune(payload)
+        cleaned["source"] = self.source
+        cleaned["external_id"] = self.external_id
+        return cleaned
+
     def to_mongo(self) -> dict[str, Any]:
         payload = self.model_dump(mode="python", exclude_none=True, exclude={"raw"})
         cleaned = _prune(payload)
-        # Always keep identity keys even if somehow empty (shouldn't happen)
         cleaned["source"] = self.source
         cleaned["external_id"] = self.external_id
         return cleaned
