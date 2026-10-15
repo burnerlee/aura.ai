@@ -1,0 +1,13 @@
+import type { FeedPost, InterestProfile } from './types';
+export const DEMO_PROFILE: InterestProfile = {
+  prompt: 'Cyberpunk, machine learning & deep tech. A little space, no generic takes.',
+  vector: { cyberpunk: 30, ai: 34, space: 22, culture: 14 }, excludedCategories: [],
+};
+export const DEMO_POSTS: FeedPost[] = [
+  { id:'demo-neon',kind:'image',category:'cyberpunk',author:{name:'Mika Tanaka',handle:'@mikatanaka',initials:'MT',avatarColor:'#8f6bb1',verified:true},publishedAt:'18 min ago',title:'The city after the city',body:'A quiet study of the places we build when the future gets here before we do.',imageAlt:'Electric blue light over a night-time city',tags:['worldbuilding','neon','visual essay'],likes:284,comments:18 },
+  { id:'demo-ai',kind:'article',category:'ai',author:{name:'Asha Rao',handle:'@ashar',initials:'AR',avatarColor:'#456d70',verified:true},publishedAt:'42 min ago',title:'Small models, strange minds',body:'What changes when intelligence is no longer one giant destination, but a thousand tiny tools running close to the work?',tags:['machine learning','systems','deep tech'],likes:192,comments:31 },
+  { id:'demo-space',kind:'image',category:'space',author:{name:'Orbit Notes',handle:'@orbitnotes',initials:'ON',avatarColor:'#476c9e'},publishedAt:'1 hr ago',title:'A map of the invisible',body:'Researchers have found a way to trace the cold gas that quietly feeds a newborn star.',imageAlt:'A bright nebula against deep space',tags:['astrophysics','stellar nurseries'],likes:508,comments:42 },
+  { id:'demo-note',kind:'short',category:'culture',author:{name:'Sora Kim',handle:'@sorakim',initials:'SK',avatarColor:'#a76d59'},publishedAt:'2 hrs ago',body:'A good interface feels like a small band playing in time. The best ones know when to leave space.',tags:['design','creative'],likes:96,comments:12 },
+  { id:'demo-substack',kind:'embed',category:'ai',author:{name:'The Gradient',handle:'@thegradient',initials:'TG',avatarColor:'#59667d',verified:true},publishedAt:'3 hrs ago',title:'The hidden craft of building with language models',body:'A field guide to the unglamorous work behind useful AI products.',platform:'Substack',embedUrl:'https://thegradient.pub/',tags:['Substack','language models','product'],likes:341,comments:27 },
+  { id:'demo-reddit',kind:'embed',category:'cyberpunk',author:{name:'r/worldbuilding',handle:'reddit.com',initials:'r/',avatarColor:'#ab644d'},publishedAt:'4 hrs ago',title:'What detail makes a fictional city feel lived in?',body:'The best answers are about what people repair, not what they invent.',platform:'Reddit',embedUrl:'https://www.reddit.com/r/worldbuilding/',tags:['Reddit','worldbuilding'],likes:176,comments:64 },
+];

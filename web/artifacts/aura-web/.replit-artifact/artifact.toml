@@ -1,0 +1,28 @@
+kind = "web"
+previewPath = "/"
+title = "Aura"
+description = "A browser-first social feed that learns a reader’s interests through an editable Interest DNA profile, curated posts, and lightweight creator tools."
+version = "1.0.0"
+id = "artifacts/aura-web"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 22642
+
+[services.development]
+run = "pnpm --filter @workspace/aura-web run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/aura-web", "run", "build" ]
+serve = "static"
+publicDir = "artifacts/aura-web/dist/public"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "22642"
+BASE_PATH = "/"
