@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import logging
 
-from scraper.llm.gemini import GeminiClient
+from scraper.llm.base import LLMClient
 from scraper.models.embeddable import EmbeddableContent
 from scraper.models.facets import PostFacets
 
@@ -40,7 +40,7 @@ def facets_to_text(facets: PostFacets) -> str:
 
 def extract_facets(
     content: EmbeddableContent,
-    client: GeminiClient,
+    client: LLMClient,
     *,
     max_body_words: int = 2000,
 ) -> PostFacets:

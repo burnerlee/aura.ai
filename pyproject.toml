@@ -20,6 +20,7 @@ dependencies = [
     "typer>=0.12",
     "rich>=13.7",
     "google-genai>=1.0",
+    "litellm>=1.50",
     "qdrant-client>=1.12",
     "numpy>=1.26",
     "fastapi>=0.115",

@@ -66,21 +66,15 @@ export interface SearchRequest {
   explain?: boolean;
 }
 
-export type CreatePostRequestCategory = typeof CreatePostRequestCategory[keyof typeof CreatePostRequestCategory];
-
-
-export const CreatePostRequestCategory = {
-  cyberpunk: 'cyberpunk',
-  ai: 'ai',
-  space: 'space',
-  culture: 'culture',
-} as const;
-
 export interface CreatePostRequest {
   kind: PostKind;
   title?: string | null;
   body?: string;
-  category?: CreatePostRequestCategory;
+  /**
+     * Free-form theme label (facet topic or seed id)
+     * @maxLength 64
+     */
+  category?: string;
   embed_url?: string | null;
   platform?: string | null;
   image_url?: string | null;
@@ -173,6 +167,43 @@ export interface OnboardRequest {
   seed_post_ids?: string[];
 }
 
+export type AuraChatMessageRole = typeof AuraChatMessageRole[keyof typeof AuraChatMessageRole];
+
+
+export const AuraChatMessageRole = {
+  user: 'user',
+  assistant: 'assistant',
+} as const;
+
+export interface AuraChatMessage {
+  role: AuraChatMessageRole;
+  content: string;
+}
+
+export type AuraProfileDraftThemeWeights = {[key: string]: number};
+
+export interface AuraProfileDraft {
+  prompt?: string;
+  topics?: string[];
+  anti_topics?: string[];
+  themes?: string[];
+  theme_weights?: AuraProfileDraftThemeWeights;
+  preferred_styles?: string[];
+  preferred_emotions?: string[];
+}
+
+export interface AuraChatRequest {
+  messages?: AuraChatMessage[];
+  known_themes?: string[];
+  apply?: boolean;
+  profile?: AuraProfileDraft | null;
+}
+
+export interface AuraOption {
+  id: string;
+  label: string;
+}
+
 export interface BigFive {
   openness?: number;
   conscientiousness?: number;
@@ -189,6 +220,16 @@ export interface Persona {
   big_five?: BigFive;
   [key: string]: unknown;
  }
+
+export interface AuraChatResponse {
+  message: string;
+  options?: AuraOption[];
+  suggested_themes?: string[];
+  ready?: boolean;
+  profile?: AuraProfileDraft | null;
+  persona?: Persona | null;
+  persona_version?: number | null;
+}
 
 export interface PersonaVersionResponse {
   persona: Persona;

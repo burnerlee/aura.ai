@@ -29,14 +29,20 @@ class Settings(BaseSettings):
     request_delay_seconds: float = 0.5
     log_level: str = "INFO"
 
-    # Gemini
+    # Gemini (free-tier — preferred for user-side inference: onboard / persona / rerank)
     gemini_api_key: str | None = None
-    gemini_embedding_model: str = "gemini-embedding-2"
+    gemini_embedding_model: str = "gemini-embedding-001"
     gemini_llm_model: str = "gemini-3.8-flash"
     embedding_dim: int = 768
     embed_concurrency: int = 4
     facets_enabled: bool = True
     embed_images: bool = False
+
+    # LiteLLM (preferred for indexing embeds + facet extraction)
+    litellm_api_key: str | None = None
+    litellm_api_base: str | None = None
+    litellm_embedding_model: str = "gemini/gemini-embedding-001"
+    litellm_llm_model: str = "openai/gemini-3.8-flash"
 
     # Qdrant
     qdrant_url: str = "http://localhost:6333"

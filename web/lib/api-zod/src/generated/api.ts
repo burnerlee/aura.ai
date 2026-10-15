@@ -155,14 +155,16 @@ export const ListPostsResponse = zod.array(ListPostsResponseItem)
  * @summary Create a user-generated post and queue embedding
  */
 export const createPostBodyBodyDefault = ``;
-export const createPostBodyCategoryDefault = `culture`;
+export const createPostBodyCategoryDefault = `General`;
+export const createPostBodyCategoryMax = 64;
+
 export const createPostBodyWaitForEmbedDefault = false;
 
 export const CreatePostBody = zod.object({
   "kind": zod.enum(['image', 'article', 'short', 'embed']),
   "title": zod.string().nullish(),
   "body": zod.string().default(createPostBodyBodyDefault),
-  "category": zod.enum(['cyberpunk', 'ai', 'space', 'culture']).default(createPostBodyCategoryDefault),
+  "category": zod.string().max(createPostBodyCategoryMax).default(createPostBodyCategoryDefault).describe('Free-form theme label (facet topic or seed id)'),
   "embed_url": zod.string().nullish(),
   "platform": zod.string().nullish(),
   "image_url": zod.string().nullish(),
@@ -521,6 +523,69 @@ export const RefreshPersonaResponse = zod.object({
 }).optional()
 }),
   "version": zod.number().int()
+})
+
+
+/**
+ * Aura interviews the user with questions and tap options, suggests themes,
+ * and optionally applies a generated interest profile (apply=true when ready).
+ * @summary Conversational personalization with Aura
+ */
+export const ChatWithAuraParams = zod.object({
+  "userId": zod.coerce.string().describe('Client-owned anonymous or auth user id')
+})
+
+export const chatWithAuraBodyApplyDefault = false;
+
+export const ChatWithAuraBody = zod.object({
+  "messages": zod.array(zod.object({
+  "role": zod.enum(['user', 'assistant']),
+  "content": zod.string()
+})).optional(),
+  "known_themes": zod.array(zod.string()).optional(),
+  "apply": zod.boolean().default(chatWithAuraBodyApplyDefault),
+  "profile": zod.object({
+  "prompt": zod.string().optional(),
+  "topics": zod.array(zod.string()).optional(),
+  "anti_topics": zod.array(zod.string()).optional(),
+  "themes": zod.array(zod.string()).optional(),
+  "theme_weights": zod.record(zod.string(), zod.number()).optional(),
+  "preferred_styles": zod.array(zod.string()).optional(),
+  "preferred_emotions": zod.array(zod.string()).optional()
+}).nullish()
+})
+
+export const ChatWithAuraResponse = zod.object({
+  "message": zod.string(),
+  "options": zod.array(zod.object({
+  "id": zod.string(),
+  "label": zod.string()
+})).optional(),
+  "suggested_themes": zod.array(zod.string()).optional(),
+  "ready": zod.boolean().optional(),
+  "profile": zod.object({
+  "prompt": zod.string().optional(),
+  "topics": zod.array(zod.string()).optional(),
+  "anti_topics": zod.array(zod.string()).optional(),
+  "themes": zod.array(zod.string()).optional(),
+  "theme_weights": zod.record(zod.string(), zod.number()).optional(),
+  "preferred_styles": zod.array(zod.string()).optional(),
+  "preferred_emotions": zod.array(zod.string()).optional()
+}).nullish(),
+  "persona": zod.object({
+  "summary": zod.string().optional(),
+  "topics": zod.array(zod.string()).optional(),
+  "anti_topics": zod.array(zod.string()).optional(),
+  "preferred_styles": zod.array(zod.string()).optional(),
+  "big_five": zod.object({
+  "openness": zod.number().optional(),
+  "conscientiousness": zod.number().optional(),
+  "extraversion": zod.number().optional(),
+  "neuroticism": zod.number().optional(),
+  "agreeableness": zod.number().optional()
+}).optional()
+}).nullish(),
+  "persona_version": zod.number().int().nullish()
 })
 
 

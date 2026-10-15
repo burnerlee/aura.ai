@@ -42,3 +42,25 @@ class TuneRequest(BaseModel):
 class OnboardRequest(BaseModel):
     free_text: str | None = None
     seed_post_ids: list[str] = Field(default_factory=list)
+
+
+class AuraChatMessageIn(BaseModel):
+    role: str  # "user" | "assistant"
+    content: str
+
+
+class AuraProfileDraftIn(BaseModel):
+    prompt: str = ""
+    topics: list[str] = Field(default_factory=list)
+    anti_topics: list[str] = Field(default_factory=list)
+    themes: list[str] = Field(default_factory=list)
+    theme_weights: dict[str, float] = Field(default_factory=dict)
+    preferred_styles: list[str] = Field(default_factory=list)
+    preferred_emotions: list[str] = Field(default_factory=list)
+
+
+class AuraChatRequest(BaseModel):
+    messages: list[AuraChatMessageIn] = Field(default_factory=list)
+    known_themes: list[str] = Field(default_factory=list)
+    apply: bool = False  # when true, persist persona from profile or ready turn
+    profile: AuraProfileDraftIn | None = None

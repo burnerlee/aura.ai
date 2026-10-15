@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import logging
 
-from scraper.llm.gemini import GeminiClient
+from scraper.llm.base import LLMClient
 from scraper.models.user import Persona, UserProfile
 
 logger = logging.getLogger(__name__)
@@ -33,6 +33,30 @@ Existing persona (revise, do not ignore muted lists):
 """
 
 
+def _fallback_persona(
+    *,
+    summary: str,
+    embed_client: LLMClient,
+    existing: Persona | None = None,
+) -> tuple[Persona, list[float]]:
+    """Build a usable persona without an LLM when free-tier quota is exhausted."""
+    text = (summary or "").strip() or "general curious reader"
+    persona = Persona(
+        summary=text,
+        topics=list((existing.topics if existing else [])[:8]),
+        anti_topics=list((existing.anti_topics if existing else [])[:8]),
+        preferred_styles=list((existing.preferred_styles if existing else [])[:4]),
+        muted_authors=list(existing.muted_authors if existing else []),
+        muted_sources=list(existing.muted_sources if existing else []),
+    )
+    try:
+        vector = embed_client.embed_query(persona.summary)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Fallback persona embed failed (%s); empty vector", exc)
+        vector = []
+    return persona, vector
+
+
 def synthesize_persona(
     profile: UserProfile,
     *,
@@ -40,7 +64,8 @@ def synthesize_persona(
     disliked_summaries: list[str],
     notes: list[str],
     tunes: list[str],
-    client: GeminiClient,
+    llm: LLMClient,
+    embed_client: LLMClient,
 ) -> tuple[Persona, list[float]]:
     prompt = _SYNTH_PROMPT.format(
         liked="\n".join(f"- {s}" for s in liked_summaries) or "(none)",
@@ -49,15 +74,26 @@ def synthesize_persona(
         tunes="\n".join(f"- {t}" for t in tunes) or "(none)",
         existing=profile.persona.model_dump_json(),
     )
-    persona = client.generate_json(prompt, Persona)
-    # Preserve mutes unless the model returned them
+    try:
+        persona = llm.generate_json(prompt, Persona)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Persona synthesis LLM failed (%s); using fallback", exc)
+        seed = (
+            "; ".join(liked_summaries[:5])
+            or profile.persona.summary
+            or "general curious reader"
+        )
+        return _fallback_persona(
+            summary=seed, embed_client=embed_client, existing=profile.persona
+        )
+
     persona.muted_authors = list(
         dict.fromkeys(profile.persona.muted_authors + persona.muted_authors)
     )
     persona.muted_sources = list(
         dict.fromkeys(profile.persona.muted_sources + persona.muted_sources)
     )
-    vector = client.embed_query(persona.summary or "general reader")
+    vector = embed_client.embed_query(persona.summary or "general reader")
     return persona, vector
 
 
@@ -65,7 +101,8 @@ def onboard_persona(
     *,
     free_text: str | None,
     seed_titles: list[str],
-    client: GeminiClient,
+    llm: LLMClient,
+    embed_client: LLMClient,
 ) -> tuple[Persona, list[float]]:
     prompt = (
         "Create a reading persona from onboarding signals.\n"
@@ -74,6 +111,19 @@ def onboard_persona(
         + ("\n".join(f"- {t}" for t in seed_titles) or "(none)")
         + "\nReturn JSON matching the Persona schema."
     )
-    persona = client.generate_json(prompt, Persona)
-    vector = client.embed_query(persona.summary or free_text or "general reader")
+    try:
+        persona = llm.generate_json(prompt, Persona)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Onboard LLM failed (%s); embedding free-text fallback", exc)
+        return _fallback_persona(
+            summary=free_text or "; ".join(seed_titles[:5]) or "general curious reader",
+            embed_client=embed_client,
+        )
+    try:
+        vector = embed_client.embed_query(
+            persona.summary or free_text or "general reader"
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Onboard embed failed (%s); empty vector", exc)
+        vector = []
     return persona, vector

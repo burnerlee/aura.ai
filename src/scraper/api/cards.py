@@ -5,8 +5,8 @@
 Contract (Phase 0):
 - ``id`` is always the Mongo ``_id`` string (not ``source:external_id``).
 - UGC uses ``source=aura``; scraped posts keep their connector source.
-- Persona for live UI is the backend ``Persona`` model; the 4-bucket Interest DNA
-  chart stays demo-only until the UI maps or replaces it.
+- Persona for live UI is the backend ``Persona`` model; card ``category`` comes
+  from facet topics (dynamic themes), not a fixed 4-bucket taxonomy.
 - Anonymous ``user_id`` is client-owned (localStorage); passed on create/events.
 """
 
@@ -21,9 +21,21 @@ from pydantic import BaseModel, Field
 from scraper.models.document import EmbeddingStatus
 from scraper.query.types import ScoredPost
 
-# Matches web/lib/aura-shared InterestCategoryId / PostKind.
+# Seed labels kept for UGC composer defaults; live cards use facet topics.
 CATEGORY_IDS = ("cyberpunk", "ai", "space", "culture")
 UGC_SOURCE = "aura"
+_GENERIC_TOPICS = frozenset(
+    {
+        "newsletter",
+        "podcast",
+        "blog",
+        "article",
+        "post",
+        "general",
+        "misc",
+        "other",
+    }
+)
 
 
 class PostKind(StrEnum):
@@ -46,7 +58,7 @@ class FeedCard(BaseModel):
 
     id: str
     kind: PostKind = PostKind.ARTICLE
-    category: str = "culture"
+    category: str = "General"
     author: CardAuthor
     published_at: str
     title: str | None = None
@@ -90,18 +102,48 @@ def _as_iso(value: Any) -> str:
     return text or datetime.now(UTC).isoformat()
 
 
+def _pick_topic_label(candidates: list[str]) -> str | None:
+    for item in candidates:
+        label = str(item).strip()
+        if not label:
+            continue
+        if label.lower() in _GENERIC_TOPICS:
+            continue
+        # Cap length for chip UI; keep original casing for display.
+        return label[:48]
+    return None
+
+
 def _normalize_category(raw: dict[str, Any]) -> str:
+    """Prefer facet topics over the old 4-bucket Interest DNA labels."""
     meta = raw.get("metadata") or {}
     if isinstance(meta, dict):
         cat = meta.get("category")
-        if isinstance(cat, str) and cat.lower() in CATEGORY_IDS:
-            return cat.lower()
+        if isinstance(cat, str) and cat.strip():
+            # UGC still stores seed ids; pass them through.
+            return cat.strip()
+
+    facets = raw.get("facets") or {}
+    if isinstance(facets, dict):
+        topics = facets.get("topics") or []
+        if isinstance(topics, list):
+            picked = _pick_topic_label([str(t) for t in topics if t])
+            if picked:
+                return picked
+
     categories = raw.get("categories") or []
     if isinstance(categories, list):
-        for item in categories:
-            if isinstance(item, str) and item.lower() in CATEGORY_IDS:
-                return item.lower()
-    return "culture"
+        picked = _pick_topic_label([str(c) for c in categories if c])
+        if picked:
+            return picked
+
+    tags = raw.get("tags") or []
+    if isinstance(tags, list):
+        picked = _pick_topic_label([str(t) for t in tags if t])
+        if picked:
+            return picked
+
+    return "General"
 
 
 def _normalize_kind(raw: dict[str, Any]) -> PostKind:

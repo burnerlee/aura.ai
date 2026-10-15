@@ -5,14 +5,17 @@
  * Aura recommendation API (BFF → Python FastAPI)
  * OpenAPI spec version: 0.1.0
  */
-import type { CreatePostRequestCategory } from './createPostRequestCategory';
 import type { PostKind } from './postKind';
 
 export interface CreatePostRequest {
   kind: PostKind;
   title?: string | null;
   body?: string;
-  category?: CreatePostRequestCategory;
+  /**
+     * Free-form theme label (facet topic or seed id)
+     * @maxLength 64
+     */
+  category?: string;
   embed_url?: string | null;
   platform?: string | null;
   image_url?: string | null;

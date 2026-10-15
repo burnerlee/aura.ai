@@ -13,7 +13,8 @@ from scraper.adapters import get_adapter
 from scraper.config import Settings, get_settings
 from scraper.embedding.chunker import chunk_content
 from scraper.embedding.facets import extract_facets, facets_to_text
-from scraper.llm.gemini import GeminiClient
+from scraper.llm.base import LLMClient
+from scraper.llm.factory import get_indexing_client
 from scraper.models.embeddable import SkipReason
 from scraper.storage.mongodb import MongoDocumentStore
 from scraper.storage.qdrant import QdrantVectorStore
@@ -35,7 +36,7 @@ def _embed_one_raw(
     *,
     store: MongoDocumentStore,
     vectors: QdrantVectorStore,
-    gemini: GeminiClient,
+    client: LLMClient,
     settings: Settings,
 ) -> str:
     """Embed a single Mongo document. Returns ``ready`` | ``skipped`` | ``failed``."""
@@ -57,21 +58,21 @@ def _embed_one_raw(
         chunk_vectors: list[list[float]] = []
         for chunk in chunks:
             title = adapted.title if chunk.kind == "head" else None
-            chunk_vectors.append(gemini.embed_document(chunk.text, title=title))
+            chunk_vectors.append(client.embed_document(chunk.text, title=title))
 
         doc_vector = _mean_vector(chunk_vectors)
 
         facets = None
         facet_vector = None
         if settings.facets_enabled:
-            facets = extract_facets(adapted, gemini)
+            facets = extract_facets(adapted, client)
             facet_text = facets_to_text(facets)
             if facet_text:
-                facet_vector = gemini.embed_document(facet_text, title=adapted.title)
+                facet_vector = client.embed_document(facet_text, title=adapted.title)
 
         image_vector = None
         if settings.embed_images and adapted.image_urls:
-            image_vector = gemini.embed_image(adapted.image_urls[0])
+            image_vector = client.embed_image(adapted.image_urls[0])
 
         payload = adapted.payload()
         if facets is not None:
@@ -88,11 +89,16 @@ def _embed_one_raw(
             image_vector=image_vector,
             payload=payload,
         )
+        embed_model = (
+            settings.litellm_embedding_model
+            if settings.litellm_api_key
+            else settings.gemini_embedding_model
+        )
         store.mark_embedded(
             src,
             external_id,
             embedding_id=point_id,
-            embedding_model=settings.gemini_embedding_model,
+            embedding_model=embed_model,
             content_hash=adapted.content_hash,
             chunk_count=len(chunks),
             facets=facets.model_dump() if facets else None,
@@ -113,7 +119,7 @@ def run_embed(
     force: bool = False,
     store: MongoDocumentStore | None = None,
     vectors: QdrantVectorStore | None = None,
-    client: GeminiClient | None = None,
+    client: LLMClient | None = None,
     settings: Settings | None = None,
 ) -> dict[str, Any]:
     settings = settings or get_settings()
@@ -134,7 +140,7 @@ def run_embed(
             raise RuntimeError("Cannot reach MongoDB. Run `make mongo-up`.")
         store.ensure_indexes()
         vectors.ensure_collection()
-        gemini = client or GeminiClient(settings)
+        gemini = client or get_indexing_client(settings)
 
         for raw in store.iter_for_embedding(
             source=source,
@@ -144,7 +150,7 @@ def run_embed(
         ):
             summary["processed"] += 1
             status = _embed_one_raw(
-                raw, store=store, vectors=vectors, gemini=gemini, settings=settings
+                raw, store=store, vectors=vectors, client=gemini, settings=settings
             )
             summary[status] += 1
 
@@ -162,7 +168,7 @@ def embed_by_ids(
     *,
     store: MongoDocumentStore | None = None,
     vectors: QdrantVectorStore | None = None,
-    client: GeminiClient | None = None,
+    client: LLMClient | None = None,
     settings: Settings | None = None,
 ) -> dict[str, Any]:
     """Embed specific posts by Mongo ``_id`` (used after UGC create)."""
@@ -186,7 +192,7 @@ def embed_by_ids(
             raise RuntimeError("Cannot reach MongoDB. Run `make mongo-up`.")
         store.ensure_indexes()
         vectors.ensure_collection()
-        gemini = client or GeminiClient(settings)
+        gemini = client or get_indexing_client(settings)
 
         docs = store.get_many_by_ids(post_ids)
         for post_id in post_ids:
@@ -196,7 +202,7 @@ def embed_by_ids(
                 continue
             summary["processed"] += 1
             status = _embed_one_raw(
-                raw, store=store, vectors=vectors, gemini=gemini, settings=settings
+                raw, store=store, vectors=vectors, client=gemini, settings=settings
             )
             summary[status] += 1
 

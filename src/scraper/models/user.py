@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from enum import StrEnum
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -66,6 +66,14 @@ class InterestCentroid(BaseModel):
     label: str | None = None
 
 
+class AuraConversationMessage(BaseModel):
+    """Stored Aura personalization chat turn (not shown in the UI)."""
+
+    role: Literal["user", "assistant"]
+    content: str
+    ts: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+
 class Interaction(BaseModel):
     user_id: str
     post_id: str | None = None
@@ -98,6 +106,8 @@ class UserProfile(BaseModel):
     negative_ids: list[str] = Field(default_factory=list)
     seen_ids: list[str] = Field(default_factory=list)
     exclude_near_ids: list[str] = Field(default_factory=list)
+    # Hidden from the chat UI; kept so Aura can resume context later.
+    aura_conversation: list[AuraConversationMessage] = Field(default_factory=list)
     persona_version: int = 0
     interaction_count_since_persona: int = 0
     updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))

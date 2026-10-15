@@ -12,7 +12,8 @@ from typing import Any
 import numpy as np
 
 from scraper.config import Settings, get_settings
-from scraper.llm.gemini import GeminiClient
+from scraper.llm.base import LLMClient
+from scraper.llm.factory import get_indexing_client, get_inference_client
 from scraper.query.scoring import mmr, negative_penalty, recency_decay, set_similarity
 from scraper.query.types import Filters, QueryKind, QuerySet, QueryVector, ScoredPost
 from scraper.storage.mongodb import MongoDocumentStore
@@ -27,19 +28,28 @@ class RecommendationEngine:
         *,
         vectors: QdrantVectorStore | None = None,
         store: MongoDocumentStore | None = None,
-        client: GeminiClient | None = None,
+        client: LLMClient | None = None,
+        inference_client: LLMClient | None = None,
         settings: Settings | None = None,
     ) -> None:
         self.settings = settings or get_settings()
         self.vectors = vectors or QdrantVectorStore(self.settings)
         self.store = store or MongoDocumentStore(self.settings)
         self._client = client
+        self._inference = inference_client
 
     @property
-    def client(self) -> GeminiClient:
+    def client(self) -> LLMClient:
+        """Embedding client — must match the indexing vector space."""
         if self._client is None:
-            self._client = GeminiClient(self.settings)
+            self._client = get_indexing_client(self.settings)
         return self._client
+
+    @property
+    def inference(self) -> LLMClient:
+        if self._inference is None:
+            self._inference = get_inference_client(self.settings)
+        return self._inference
 
     def _candidate_filter(
         self,
@@ -215,7 +225,7 @@ class RecommendationEngine:
             class Rerank(BaseModel):
                 items: list[Item] = Field(default_factory=list)
 
-            rerank = self.client.generate_json(prompt, Rerank)
+            rerank = self.inference.generate_json(prompt, Rerank)
             reordered: list[ScoredPost] = []
             seen: set[int] = set()
             for item in rerank.items:

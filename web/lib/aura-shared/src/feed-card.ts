@@ -2,7 +2,8 @@
  * Copyright (c) 2026 DevRev Inc. All rights reserved.
  */
 
-import { CATEGORY_IDS, type FeedPost, type InterestCategoryId, type PostKind } from "./types";
+import type { FeedPost, InterestCategoryId, PostKind } from "./types";
+import { formatRelativeTime } from "./themes";
 
 /** Snake_case card from the Python / BFF recommendation API. */
 export interface ApiFeedCard {
@@ -33,12 +34,12 @@ export interface ApiFeedCard {
   embedding_error?: string | null;
   score?: number | null;
   why?: string | null;
+  per_query_scores?: Record<string, number>;
 }
 
 function asCategory(value: string): InterestCategoryId {
-  return (CATEGORY_IDS as readonly string[]).includes(value)
-    ? (value as InterestCategoryId)
-    : "culture";
+  const trimmed = value?.trim();
+  return trimmed || "General";
 }
 
 function asKind(value: string): PostKind {
@@ -58,7 +59,14 @@ function asPlatform(
   return undefined;
 }
 
+/** Best URL to open the original post / blog in a new tab. */
+export function postSourceUrl(post: Pick<FeedPost, "url" | "embedUrl">): string | undefined {
+  const raw = (post.url || post.embedUrl || "").trim();
+  return raw || undefined;
+}
+
 export function mapApiFeedCardToPost(card: ApiFeedCard): FeedPost {
+  const sourceUrl = card.url || card.embed_url || undefined;
   return {
     id: card.id,
     kind: asKind(card.kind),
@@ -70,15 +78,20 @@ export function mapApiFeedCardToPost(card: ApiFeedCard): FeedPost {
       avatarColor: card.author.avatar_color || "#626b7a",
       verified: card.author.verified,
     },
-    publishedAt: card.published_at,
+    publishedAt: formatRelativeTime(card.published_at),
     title: card.title ?? undefined,
     body: card.body,
     imageUrl: card.image_url ?? undefined,
     imageAlt: card.image_alt ?? undefined,
     platform: asPlatform(card.platform),
-    embedUrl: card.embed_url ?? undefined,
+    url: sourceUrl,
+    embedUrl: card.embed_url ?? sourceUrl,
     tags: card.tags ?? [],
     likes: card.likes ?? 0,
     comments: card.comments ?? 0,
+    matchScore:
+      typeof card.score === "number" && Number.isFinite(card.score)
+        ? card.score
+        : undefined,
   };
 }

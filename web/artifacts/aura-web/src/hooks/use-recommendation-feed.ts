@@ -2,29 +2,58 @@
  * Copyright (c) 2026 DevRev Inc. All rights reserved.
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
+  chatWithAura,
   createPost,
   discoverPosts,
   getPost,
   getUserFeed,
   getUserPair,
-  onboardUser,
   postUserEvents,
   searchPosts,
   similarPosts,
   tuneUser,
+  type AuraChatRequest,
+  type AuraChatResponse,
   type FeedCard,
 } from "@workspace/api-client-react";
 import {
+  interestProfileFromAura,
+  localAuraTurn,
   mapApiFeedCardToPost,
+  type AuraChatMessage,
+  type AuraTurn,
   type FeedPost,
   type FeedbackDirection,
   type InterestProfile,
 } from "@workspace/aura-shared";
 import { getOrCreateUserId } from "@/lib/user-id";
 import { useDemoMode } from "@/lib/live-mode";
+
+function mapAuraResponse(res: AuraChatResponse): AuraTurn {
+  return {
+    message: res.message,
+    options: (res.options ?? []).map((opt) => ({
+      id: opt.id,
+      label: opt.label,
+    })),
+    suggested_themes: res.suggested_themes ?? [],
+    ready: Boolean(res.ready),
+    profile: res.profile
+      ? {
+          prompt: res.profile.prompt ?? "",
+          topics: res.profile.topics ?? [],
+          anti_topics: res.profile.anti_topics ?? [],
+          themes: res.profile.themes ?? [],
+          theme_weights: res.profile.theme_weights ?? {},
+          preferred_styles: res.profile.preferred_styles,
+          preferred_emotions: res.profile.preferred_emotions,
+        }
+      : null,
+  };
+}
 
 export type PublishDraft = Omit<FeedPost, "id" | "publishedAt" | "likes" | "comments">;
 
@@ -49,7 +78,6 @@ export function useRecommendationFeed(demoPosts: FeedPost[]) {
   const [localOverlay, setLocalOverlay] = useState<FeedPost[]>([]);
   const [similarResults, setSimilarResults] = useState<FeedPost[] | null>(null);
   const [similarSeedId, setSimilarSeedId] = useState<string | null>(null);
-  const onboarded = useRef(false);
 
   const feedQuery = useQuery({
     queryKey: ["feed", userId],
@@ -64,21 +92,6 @@ export function useRecommendationFeed(demoPosts: FeedPost[]) {
     enabled: !demo,
     staleTime: 30_000,
   });
-
-  useEffect(() => {
-    if (demo || onboarded.current) return;
-    onboarded.current = true;
-    const key = `aura:onboarded:${userId}`;
-    if (localStorage.getItem(key)) return;
-    void onboardUser(userId, {
-      free_text:
-        "Curious reader exploring AI, culture, space, and cyberpunk signal.",
-    })
-      .then(() => localStorage.setItem(key, "1"))
-      .catch(() => {
-        onboarded.current = false;
-      });
-  }, [demo, userId]);
 
   const remotePosts = useMemo(() => {
     if (demo) return demoPosts;
@@ -193,6 +206,71 @@ export function useRecommendationFeed(demoPosts: FeedPost[]) {
     [demo, queryClient, userId],
   );
 
+  const talkToAura = useCallback(
+    async (
+      messages: AuraChatMessage[],
+      knownThemes: string[] = [],
+      apply = false,
+    ): Promise<AuraTurn> => {
+      if (demo) {
+        return localAuraTurn(messages, knownThemes);
+      }
+      const body: AuraChatRequest = {
+        messages: messages.map((m) => ({ role: m.role, content: m.content })),
+        known_themes: knownThemes,
+        apply,
+      };
+      try {
+        const res = await chatWithAura(userId, body);
+        if (apply && res.ready) {
+          localStorage.setItem(`aura:onboarded:${userId}`, "1");
+          void queryClient.invalidateQueries({ queryKey: ["feed", userId] });
+        }
+        return mapAuraResponse(res);
+      } catch {
+        // Offline / rate-limit: keep the chat usable with the local script.
+        return localAuraTurn(messages, knownThemes);
+      }
+    },
+    [demo, queryClient, userId],
+  );
+
+  const applyAuraProfile = useCallback(
+    async (
+      turn: AuraTurn,
+      messages: AuraChatMessage[],
+      knownThemes: string[] = [],
+    ): Promise<InterestProfile | null> => {
+      if (!turn.profile) return null;
+      const local = interestProfileFromAura(turn.profile, knownThemes);
+      if (demo) return local;
+      try {
+        const body: AuraChatRequest = {
+          messages: messages.map((m) => ({ role: m.role, content: m.content })),
+          known_themes: knownThemes,
+          apply: true,
+          profile: {
+            prompt: turn.profile.prompt,
+            topics: turn.profile.topics,
+            anti_topics: turn.profile.anti_topics,
+            themes: turn.profile.themes,
+            theme_weights: turn.profile.theme_weights,
+            preferred_styles: turn.profile.preferred_styles,
+            preferred_emotions: turn.profile.preferred_emotions,
+          },
+        };
+        await chatWithAura(userId, body);
+        localStorage.setItem(`aura:onboarded:${userId}`, "1");
+        void queryClient.invalidateQueries({ queryKey: ["feed", userId] });
+      } catch {
+        await tune(local);
+        localStorage.setItem(`aura:onboarded:${userId}`, "1");
+      }
+      return local;
+    },
+    [demo, queryClient, tune, userId],
+  );
+
   const fetchPair = useCallback(async (): Promise<FeedPost[]> => {
     if (demo) {
       return demoPosts.slice(0, 2);
@@ -263,6 +341,8 @@ export function useRecommendationFeed(demoPosts: FeedPost[]) {
     recordSave,
     publish,
     tune,
+    talkToAura,
+    applyAuraProfile,
     fetchPair,
     preferPair,
     loadSimilar,

@@ -6,10 +6,16 @@
  * OpenAPI spec version: 0.1.0
  */
 
+export * from './auraChatMessage';
+export * from './auraChatMessageRole';
+export * from './auraChatRequest';
+export * from './auraChatResponse';
+export * from './auraOption';
+export * from './auraProfileDraft';
+export * from './auraProfileDraftThemeWeights';
 export * from './bigFive';
 export * from './cardAuthor';
 export * from './createPostRequest';
-export * from './createPostRequestCategory';
 export * from './createPostResponse';
 export * from './createPostResponseEmbeddingSummary';
 export * from './discoverPostsParams';

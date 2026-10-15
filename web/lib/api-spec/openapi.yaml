@@ -349,6 +349,36 @@ paths:
               schema:
                 $ref: "#/components/schemas/PersonaVersionResponse"
 
+  /users/{userId}/aura/chat:
+    post:
+      operationId: chatWithAura
+      tags: [users]
+      summary: Conversational personalization with Aura
+      description: |
+        Aura interviews the user with questions and tap options, suggests themes,
+        and optionally applies a generated interest profile (apply=true when ready).
+      parameters:
+        - $ref: "#/components/parameters/UserId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AuraChatRequest"
+      responses:
+        "200":
+          description: Next Aura turn (message, options, optional profile)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuraChatResponse"
+        "500":
+          description: Chat failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorDetail"
+
 components:
   parameters:
     PostId:
@@ -508,8 +538,9 @@ components:
           default: ""
         category:
           type: string
-          enum: [cyberpunk, ai, space, culture]
-          default: culture
+          description: Free-form theme label (facet topic or seed id)
+          default: General
+          maxLength: 64
         embed_url:
           type: string
           nullable: true
@@ -664,6 +695,103 @@ components:
           items:
             type: string
       required: []
+
+    AuraChatMessage:
+      type: object
+      properties:
+        role:
+          type: string
+          enum: [user, assistant]
+        content:
+          type: string
+      required: [role, content]
+
+    AuraChatRequest:
+      type: object
+      properties:
+        messages:
+          type: array
+          items:
+            $ref: "#/components/schemas/AuraChatMessage"
+        known_themes:
+          type: array
+          items:
+            type: string
+        apply:
+          type: boolean
+          default: false
+        profile:
+          allOf:
+            - $ref: "#/components/schemas/AuraProfileDraft"
+          nullable: true
+      required: []
+
+    AuraOption:
+      type: object
+      properties:
+        id:
+          type: string
+        label:
+          type: string
+      required: [id, label]
+
+    AuraProfileDraft:
+      type: object
+      properties:
+        prompt:
+          type: string
+        topics:
+          type: array
+          items:
+            type: string
+        anti_topics:
+          type: array
+          items:
+            type: string
+        themes:
+          type: array
+          items:
+            type: string
+        theme_weights:
+          type: object
+          additionalProperties:
+            type: number
+        preferred_styles:
+          type: array
+          items:
+            type: string
+        preferred_emotions:
+          type: array
+          items:
+            type: string
+
+    AuraChatResponse:
+      type: object
+      properties:
+        message:
+          type: string
+        options:
+          type: array
+          items:
+            $ref: "#/components/schemas/AuraOption"
+        suggested_themes:
+          type: array
+          items:
+            type: string
+        ready:
+          type: boolean
+        profile:
+          allOf:
+            - $ref: "#/components/schemas/AuraProfileDraft"
+          nullable: true
+        persona:
+          allOf:
+            - $ref: "#/components/schemas/Persona"
+          nullable: true
+        persona_version:
+          type: integer
+          nullable: true
+      required: [message]
 
     BigFive:
       type: object

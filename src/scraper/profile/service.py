@@ -9,14 +9,29 @@ from datetime import UTC, datetime
 from typing import Any
 
 from scraper.config import Settings, get_settings
-from scraper.llm.gemini import GeminiClient
+from scraper.llm.base import LLMClient
+from scraper.llm.factory import (
+    get_chat_client,
+    get_indexing_client,
+    get_inference_client,
+)
 from scraper.models.user import (
+    AuraConversationMessage,
     EventType,
     FeedbackReason,
     Interaction,
     UserProfile,
 )
 from scraper.profile.clusters import compute_centroids
+from scraper.profile.aura import (
+    MAX_STORED_MESSAGES,
+    AuraChatMessage,
+    AuraProfileDraft,
+    AuraTurn,
+    chat_with_aura,
+    draft_to_persona,
+    merge_conversation_context,
+)
 from scraper.profile.persona import onboard_persona, synthesize_persona
 from scraper.profile.state import update_state
 from scraper.profile.weights import (
@@ -40,22 +55,37 @@ class UserProfileService:
         store: MongoDocumentStore | None = None,
         vectors: QdrantVectorStore | None = None,
         engine: RecommendationEngine | None = None,
-        client: GeminiClient | None = None,
+        client: LLMClient | None = None,
+        inference_client: LLMClient | None = None,
+        indexing_client: LLMClient | None = None,
         settings: Settings | None = None,
     ) -> None:
         self.settings = settings or get_settings()
         self.store = store or MongoDocumentStore(self.settings)
         self.vectors = vectors or QdrantVectorStore(self.settings)
+        self._indexing = indexing_client or client
+        self._inference = inference_client or client
         self.engine = engine or RecommendationEngine(
-            vectors=self.vectors, store=self.store, client=client, settings=self.settings
+            vectors=self.vectors,
+            store=self.store,
+            client=self._indexing,
+            inference_client=self._inference,
+            settings=self.settings,
         )
-        self._client = client
 
     @property
-    def client(self) -> GeminiClient:
-        if self._client is None:
-            self._client = GeminiClient(self.settings)
-        return self._client
+    def client(self) -> LLMClient:
+        """Indexing / embedding client (same vector space as the corpus)."""
+        if self._indexing is None:
+            self._indexing = get_indexing_client(self.settings)
+        return self._indexing
+
+    @property
+    def inference(self) -> LLMClient:
+        """User-side LLM (onboard / persona synthesis / rerank)."""
+        if self._inference is None:
+            self._inference = get_inference_client(self.settings)
+        return self._inference
 
     def get_or_create(self, user_id: str) -> UserProfile:
         doc = self.store.users.find_one({"user_id": user_id})
@@ -210,8 +240,123 @@ class UserProfileService:
             disliked_summaries=disliked,
             notes=notes,
             tunes=tunes,
-            client=self.client,
+            llm=self.inference,
+            embed_client=self.client,
         )
+        profile.persona = persona
+        profile.persona_vector = vector
+        profile.persona_version += 1
+        profile.interaction_count_since_persona = 0
+        self.save(profile)
+        return profile
+
+    def _stored_aura_messages(self, profile: UserProfile) -> list[AuraChatMessage]:
+        return [
+            AuraChatMessage(role=m.role, content=m.content)
+            for m in profile.aura_conversation
+            if m.content.strip()
+        ]
+
+    def _persist_aura_conversation(
+        self,
+        profile: UserProfile,
+        session: list[AuraChatMessage],
+        assistant_reply: str | None = None,
+    ) -> UserProfile:
+        """Merge session + latest assistant reply into hidden profile memory.
+
+        Empty sessions (chat reopen / welcome-back) are not written — that would
+        spam storage with greeting turns. Persistence starts once the user talks.
+        """
+        if not session:
+            return profile
+        stored = self._stored_aura_messages(profile)
+        merged = merge_conversation_context(stored, session)
+        if assistant_reply and assistant_reply.strip():
+            reply = assistant_reply.strip()
+            if not (
+                merged
+                and merged[-1].role == "assistant"
+                and merged[-1].content == reply
+            ):
+                merged.append(AuraChatMessage(role="assistant", content=reply))
+        profile.aura_conversation = [
+            AuraConversationMessage(role=m.role, content=m.content)
+            for m in merged[-MAX_STORED_MESSAGES:]
+        ]
+        self.save(profile)
+        return profile
+
+    def aura_chat(
+        self,
+        user_id: str,
+        *,
+        messages: list[AuraChatMessage],
+        known_themes: list[str] | None = None,
+        apply: bool = False,
+        profile_draft: AuraProfileDraft | None = None,
+    ) -> tuple[AuraTurn, UserProfile | None]:
+        """One conversational turn with Aura; optionally persist a ready profile."""
+        profile = self.get_or_create(user_id)
+        prior = self._stored_aura_messages(profile)
+
+        if apply and profile_draft is not None:
+            turn = AuraTurn(
+                message="You're all set — I tuned your feed around this profile.",
+                options=[],
+                suggested_themes=list(profile_draft.themes[:4]),
+                ready=True,
+                profile=profile_draft,
+            )
+            profile = self.apply_aura_profile(user_id, profile_draft)
+            profile = self._persist_aura_conversation(
+                profile, messages, turn.message
+            )
+            return turn, profile
+
+        llm: LLMClient | None
+        fallback_llm: LLMClient | None = None
+        try:
+            llm = get_chat_client(self.settings)
+        except RuntimeError:
+            llm = None
+        # Secondary: free-tier Gemini when LiteLLM is unavailable or errors.
+        try:
+            inference = self.inference
+            if inference is not llm:
+                fallback_llm = inference
+        except RuntimeError:
+            fallback_llm = None
+        turn = chat_with_aura(
+            messages,
+            known_themes=known_themes,
+            llm=llm,
+            fallback_llm=fallback_llm,
+            prior_messages=prior,
+        )
+        profile = self._persist_aura_conversation(profile, messages, turn.message)
+        if apply and turn.ready and turn.profile is not None:
+            profile = self.apply_aura_profile(user_id, turn.profile)
+        return turn, profile
+
+    def apply_aura_profile(
+        self,
+        user_id: str,
+        draft: AuraProfileDraft,
+    ) -> UserProfile:
+        """Persist Aura's drafted profile as persona + embedding."""
+        profile = self.get_or_create(user_id)
+        persona = draft_to_persona(draft)
+        # Merge mutes from any prior persona.
+        persona.muted_authors = list(profile.persona.muted_authors)
+        persona.muted_sources = list(profile.persona.muted_sources)
+        try:
+            vector = self.client.embed_query(
+                persona.summary or "; ".join(persona.topics) or "curious reader"
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Aura profile embed failed (%s); empty vector", exc)
+            vector = []
         profile.persona = persona
         profile.persona_vector = vector
         profile.persona_version += 1
@@ -234,7 +379,10 @@ class UserProfileService:
             if pid not in profile.positive_ids:
                 profile.positive_ids.append(pid)
         persona, vector = onboard_persona(
-            free_text=free_text, seed_titles=titles, client=self.client
+            free_text=free_text,
+            seed_titles=titles,
+            llm=self.inference,
+            embed_client=self.client,
         )
         profile.persona = persona
         profile.persona_vector = vector

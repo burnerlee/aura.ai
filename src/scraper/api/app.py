@@ -20,12 +20,14 @@ from scraper.api.posts import (
     maybe_embed_post,
 )
 from scraper.api.schemas import (
+    AuraChatRequest,
     EventsRequest,
     OnboardRequest,
     SearchRequest,
     TuneRequest,
 )
 from scraper.embedding.worker import embed_by_ids
+from scraper.profile.aura import AuraChatMessage, AuraProfileDraft
 from scraper.models.user import EventType, Interaction
 from scraper.profile.service import UserProfileService
 from scraper.query.engine import RecommendationEngine
@@ -154,7 +156,11 @@ def create_app(
     @app.get("/users/{user_id}/profile")
     def get_profile(user_id: str) -> dict[str, Any]:
         profile = profiles.get_or_create(user_id)
-        return profile.model_dump()
+        # Keep Aura chat memory server-side; UI never needs the transcript.
+        data = profile.model_dump()
+        data.pop("aura_conversation", None)
+        data["conversation_turns"] = len(profile.aura_conversation)
+        return data
 
     @app.post("/users/{user_id}/onboard")
     def onboard(user_id: str, body: OnboardRequest) -> dict[str, Any]:
@@ -173,6 +179,38 @@ def create_app(
             "persona": profile.persona.model_dump(),
             "version": profile.persona_version,
         }
+
+    @app.post("/users/{user_id}/aura/chat")
+    def aura_chat(user_id: str, body: AuraChatRequest) -> dict[str, Any]:
+        """Conversational personalization with Aura."""
+        messages = [
+            AuraChatMessage(role=m.role, content=m.content)  # type: ignore[arg-type]
+            for m in body.messages
+            if m.role in ("user", "assistant") and m.content.strip()
+        ]
+        draft = (
+            AuraProfileDraft.model_validate(body.profile.model_dump())
+            if body.profile is not None
+            else None
+        )
+        try:
+            turn, profile = profiles.aura_chat(
+                user_id,
+                messages=messages,
+                known_themes=body.known_themes,
+                apply=body.apply,
+                profile_draft=draft,
+            )
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(status_code=500, detail=str(exc)) from exc
+        payload: dict[str, Any] = turn.model_dump()
+        # Conversation text stays on the profile for Aura memory; not returned to UI.
+        if profile is not None:
+            if body.apply:
+                payload["persona"] = profile.persona.model_dump()
+                payload["persona_version"] = profile.persona_version
+            payload["conversation_turns"] = len(profile.aura_conversation)
+        return payload
 
     return app
 

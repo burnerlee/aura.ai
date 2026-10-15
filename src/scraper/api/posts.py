@@ -12,7 +12,6 @@ from typing import Any
 from pydantic import BaseModel, field_validator
 
 from scraper.api.cards import (
-    CATEGORY_IDS,
     UGC_SOURCE,
     FeedCard,
     PostKind,
@@ -31,7 +30,7 @@ class CreatePostRequest(BaseModel):
     kind: PostKind = PostKind.SHORT
     title: str | None = None
     body: str = ""
-    category: str = "culture"
+    category: str = "General"
     embed_url: str | None = None
     platform: str | None = None
     image_url: str | None = None
@@ -43,10 +42,13 @@ class CreatePostRequest(BaseModel):
     @field_validator("category")
     @classmethod
     def _category_ok(cls, value: str) -> str:
-        key = value.strip().lower()
-        if key not in CATEGORY_IDS:
-            raise ValueError(f"category must be one of {CATEGORY_IDS}")
-        return key
+        label = value.strip()
+        if not label:
+            return "General"
+        # Allow free-form themes (facet topics) plus legacy seed ids.
+        if len(label) > 64:
+            raise ValueError("category must be 64 characters or fewer")
+        return label
 
     @field_validator("body")
     @classmethod
