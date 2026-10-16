@@ -7,6 +7,7 @@
  */
 import type { AuraOption } from './auraOption';
 import type { AuraProfileDraft } from './auraProfileDraft';
+import type { InterestDna } from './interestDna';
 import type { Persona } from './persona';
 
 export interface AuraChatResponse {
@@ -17,4 +18,5 @@ export interface AuraChatResponse {
   profile?: AuraProfileDraft | null;
   persona?: Persona | null;
   persona_version?: number | null;
+  dna?: InterestDna | null;
 }

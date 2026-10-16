@@ -2,7 +2,7 @@
  * Copyright (c) 2026 DevRev Inc. All rights reserved.
  */
 
-import type { FeedPost, InterestCategoryId, PostKind } from "./types";
+import type { FeedPost, InterestCategoryId, PostKind, PostMatch } from "./types";
 import { formatRelativeTime } from "./themes";
 
 /** Snake_case card from the Python / BFF recommendation API. */
@@ -35,6 +35,17 @@ export interface ApiFeedCard {
   score?: number | null;
   why?: string | null;
   per_query_scores?: Record<string, number>;
+  category_tag_id?: string | null;
+  canonical_tags?: { id: string; label: string; kind: "topic" | "style" | "theme" }[];
+  match?: {
+    percent?: number | null;
+    fit: number;
+    pool_size: number;
+    reliable: boolean;
+    components: Record<string, number>;
+    top_attribution?: string | null;
+    flags: { kind: "aversion" | "affinity"; label: string; rule_key: string }[];
+  } | null;
 }
 
 function asCategory(value: string): InterestCategoryId {
@@ -65,12 +76,32 @@ export function postSourceUrl(post: Pick<FeedPost, "url" | "embedUrl">): string 
   return raw || undefined;
 }
 
+function mapMatch(match: ApiFeedCard["match"]): PostMatch | undefined {
+  if (!match) return undefined;
+  return {
+    percent: typeof match.percent === "number" ? match.percent : null,
+    fit: match.fit,
+    poolSize: match.pool_size,
+    reliable: match.reliable,
+    components: match.components ?? {},
+    topAttribution: match.top_attribution ?? undefined,
+    flags: (match.flags ?? []).map((flag) => ({
+      kind: flag.kind,
+      label: flag.label,
+      ruleKey: flag.rule_key,
+    })),
+  };
+}
+
 export function mapApiFeedCardToPost(card: ApiFeedCard): FeedPost {
   const sourceUrl = card.url || card.embed_url || undefined;
   return {
     id: card.id,
     kind: asKind(card.kind),
     category: asCategory(card.category),
+    categoryTagId: card.category_tag_id ?? undefined,
+    canonicalTags: card.canonical_tags,
+    match: mapMatch(card.match),
     author: {
       name: card.author.name,
       handle: card.author.handle,

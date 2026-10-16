@@ -379,6 +379,104 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorDetail"
 
+  /tags:
+    get:
+      operationId: listTags
+      tags: [tags]
+      summary: Canonical tag vocabulary (themes, topics, styles)
+      parameters:
+        - name: kind
+          in: query
+          schema:
+            $ref: "#/components/schemas/TagKind"
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 100
+            minimum: 1
+            maximum: 500
+        - name: min_docs
+          in: query
+          schema:
+            type: integer
+            default: 1
+            minimum: 0
+      responses:
+        "200":
+          description: Tags, most common first
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Tag"
+
+  /users/{userId}/dna:
+    get:
+      operationId: getUserDna
+      tags: [users]
+      summary: Server-owned Interest DNA
+      description: |
+        Weights are keyed by theme id and sum to ~100. A profile that predates DNA is
+        seeded from its persona on first read; a brand-new user has version 0.
+      parameters:
+        - $ref: "#/components/parameters/UserId"
+      responses:
+        "200":
+          description: Current Interest DNA
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InterestDna"
+    patch:
+      operationId: patchUserDna
+      tags: [users]
+      summary: Edit Interest DNA (drag a slice, confirm or remove a rule)
+      parameters:
+        - $ref: "#/components/parameters/UserId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DnaPatch"
+      responses:
+        "200":
+          description: Updated Interest DNA
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InterestDna"
+        "409":
+          description: base_version is stale; refetch and retry
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorDetail"
+
+  /users/{userId}/dna/import:
+    post:
+      operationId: importUserDna
+      tags: [users]
+      summary: One-time adoption of a browser-local Interest DNA
+      description: Never overrides an existing server DNA (imported=false).
+      parameters:
+        - $ref: "#/components/parameters/UserId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DnaImportRequest"
+      responses:
+        "200":
+          description: Import result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DnaImportResponse"
+
 components:
   parameters:
     PostId:
@@ -493,6 +591,18 @@ components:
           type: object
           additionalProperties:
             type: number
+        category_tag_id:
+          type: string
+          nullable: true
+          description: Theme id behind `category`; the key into Interest DNA weights.
+        canonical_tags:
+          type: array
+          items:
+            $ref: "#/components/schemas/CardTag"
+        match:
+          allOf:
+            - $ref: "#/components/schemas/MatchInfo"
+          nullable: true
       required:
         - id
         - kind
@@ -654,6 +764,14 @@ components:
         pair_post_id:
           type: string
           nullable: true
+        match_percent:
+          type: number
+          nullable: true
+          description: Match percent the card showed; weights how much the feedback counts.
+        matched_label:
+          type: string
+          nullable: true
+          description: Top attribution on the card (what pulled the post in).
       required: [event]
 
     EventsRequest:
@@ -675,6 +793,20 @@ components:
         persona_version:
           type: integer
           nullable: true
+        dna:
+          allOf:
+            - $ref: "#/components/schemas/InterestDna"
+          nullable: true
+        noticed:
+          type: array
+          description: Attributes of a just-skipped post, offered as one-tap chips.
+          items:
+            $ref: "#/components/schemas/NoticedAttr"
+        proposals:
+          type: array
+          description: Newly mined avoidances awaiting confirm / dismiss.
+          items:
+            $ref: "#/components/schemas/DnaRule"
       required: [ok, count]
 
     TuneRequest:
@@ -791,6 +923,10 @@ components:
         persona_version:
           type: integer
           nullable: true
+        dna:
+          allOf:
+            - $ref: "#/components/schemas/InterestDna"
+          nullable: true
       required: [message]
 
     BigFive:
@@ -836,3 +972,204 @@ components:
         version:
           type: integer
       required: [persona, version]
+
+    TagKind:
+      type: string
+      enum: [topic, style, theme]
+
+    Tag:
+      type: object
+      properties:
+        id:
+          type: string
+        kind:
+          $ref: "#/components/schemas/TagKind"
+        label:
+          type: string
+        aliases:
+          type: array
+          items:
+            type: string
+        doc_count:
+          type: integer
+        parent_id:
+          type: string
+          nullable: true
+      required: [id, kind, label, doc_count]
+
+    CardTag:
+      type: object
+      properties:
+        id:
+          type: string
+        label:
+          type: string
+        kind:
+          $ref: "#/components/schemas/TagKind"
+      required: [id, label, kind]
+
+    MatchFlag:
+      type: object
+      properties:
+        kind:
+          type: string
+          enum: [aversion, affinity]
+        label:
+          type: string
+        rule_key:
+          type: string
+      required: [kind, label, rule_key]
+
+    MatchInfo:
+      type: object
+      description: |
+        percent is relative: the post's percentile among every candidate scored for
+        this request (not the shown list). fit is the absolute value behind it.
+      properties:
+        percent:
+          type: integer
+          nullable: true
+          description: Null when the scored pool is too small to rank against.
+        fit:
+          type: number
+        pool_size:
+          type: integer
+        reliable:
+          type: boolean
+        components:
+          type: object
+          additionalProperties:
+            type: number
+        top_attribution:
+          type: string
+          nullable: true
+        flags:
+          type: array
+          items:
+            $ref: "#/components/schemas/MatchFlag"
+      required: [fit, pool_size, reliable, components, flags]
+
+    DnaRuleKind:
+      type: string
+      enum: [topic, style, emotion, author, source, length, reading_level]
+
+    DnaRuleSource:
+      type: string
+      enum: [chat, learned, confirmed]
+
+    DnaRule:
+      type: object
+      properties:
+        kind:
+          $ref: "#/components/schemas/DnaRuleKind"
+        key:
+          type: string
+        label:
+          type: string
+          nullable: true
+        strength:
+          type: number
+        source:
+          $ref: "#/components/schemas/DnaRuleSource"
+        evidence_ids:
+          type: array
+          items:
+            type: string
+      required: [kind, key]
+
+    InterestDna:
+      type: object
+      properties:
+        weights:
+          type: object
+          description: Theme id -> share (sums to ~100). `custom:` keys have no corpus theme yet.
+          additionalProperties:
+            type: number
+        labels:
+          type: object
+          additionalProperties:
+            type: string
+        anti:
+          type: array
+          items:
+            $ref: "#/components/schemas/DnaRule"
+        affinities:
+          type: array
+          items:
+            $ref: "#/components/schemas/DnaRule"
+        prompt:
+          type: string
+        dismissed:
+          type: array
+          items:
+            type: string
+        version:
+          type: integer
+        updated_at:
+          type: string
+      required: [weights, labels, anti, affinities, prompt, version]
+
+    DnaPatch:
+      type: object
+      properties:
+        base_version:
+          type: integer
+        set_weights:
+          type: object
+          description: Theme id -> target percent; every other theme rescales.
+          additionalProperties:
+            type: number
+        remove_weights:
+          type: array
+          items:
+            type: string
+        add_anti:
+          type: array
+          items:
+            $ref: "#/components/schemas/DnaRule"
+        remove_anti:
+          type: array
+          items:
+            type: string
+        prompt:
+          type: string
+          nullable: true
+      required: [base_version]
+
+    DnaImportRequest:
+      type: object
+      properties:
+        vector:
+          type: object
+          additionalProperties:
+            type: number
+        prompt:
+          type: string
+        excluded_categories:
+          type: array
+          items:
+            type: string
+
+    DnaImportResponse:
+      type: object
+      properties:
+        imported:
+          type: boolean
+        dna:
+          $ref: "#/components/schemas/InterestDna"
+      required: [imported, dna]
+
+    NoticedAttr:
+      type: object
+      properties:
+        kind:
+          $ref: "#/components/schemas/DnaRuleKind"
+        key:
+          type: string
+        label:
+          type: string
+        seen:
+          type: integer
+        negative:
+          type: integer
+      required: [kind, key, label, seen, negative]

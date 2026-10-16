@@ -5,9 +5,17 @@
  * Aura recommendation API (BFF → Python FastAPI)
  * OpenAPI spec version: 0.1.0
  */
+import type { DnaRule } from './dnaRule';
+import type { InterestDna } from './interestDna';
+import type { NoticedAttr } from './noticedAttr';
 
 export interface EventsResponse {
   ok: boolean;
   count: number;
   persona_version?: number | null;
+  dna?: InterestDna | null;
+  /** Attributes of a just-skipped post, offered as one-tap chips. */
+  noticed?: NoticedAttr[];
+  /** Newly mined avoidances awaiting confirm / dismiss. */
+  proposals?: DnaRule[];
 }

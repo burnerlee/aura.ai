@@ -14,8 +14,17 @@ import numpy as np
 from scraper.config import Settings, get_settings
 from scraper.llm.base import LLMClient
 from scraper.llm.factory import get_indexing_client, get_inference_client
+from scraper.query.rules import RELIABLE_POOL, match_percent, percentile_rank, rule_effect
 from scraper.query.scoring import mmr, negative_penalty, recency_decay, set_similarity
-from scraper.query.types import Filters, QueryKind, QuerySet, QueryVector, ScoredPost
+from scraper.query.types import (
+    Filters,
+    MatchInfo,
+    QueryKind,
+    QuerySet,
+    QueryVector,
+    RuleSet,
+    ScoredPost,
+)
 from scraper.storage.mongodb import MongoDocumentStore
 from scraper.storage.qdrant import QdrantVectorStore, point_id_for
 
@@ -94,6 +103,7 @@ class RecommendationEngine:
         k: int = 10,
         exclude_ids: list[str] | None = None,
         negative_set: list[list[float]] | None = None,
+        rules: RuleSet | None = None,
         explain: bool = False,
         persona_text: str | None = None,
     ) -> list[ScoredPost]:
@@ -118,6 +128,8 @@ class RecommendationEngine:
 
         now = time.time()
         scores: dict[str, float] = {}
+        fits: dict[str, float] = {}
+        match_parts: dict[str, dict[str, Any]] = {}
         per_query: dict[str, dict[str, float]] = {}
         doc_centroids: dict[str, list[float]] = {}
         payloads: dict[str, dict[str, Any]] = {}
@@ -146,7 +158,10 @@ class RecommendationEngine:
                 now_epoch=now,
                 half_life_days=self.settings.recency_half_life_days,
             )
-            final = (base - penalty) * decay
+            effect = rule_effect(payload, rules)
+            # ``fit`` is how well the post suits the user; recency only affects ordering.
+            fit = base - penalty - effect.penalty + effect.boost
+            final = fit * decay
 
             # Per-query attribution for "why"
             attr: dict[str, float] = {}
@@ -158,12 +173,38 @@ class RecommendationEngine:
             reasons[pid] = f"matched your {top_label} interest"
 
             scores[pid] = final
+            fits[pid] = fit
+            match_parts[pid] = {
+                "components": {
+                    "semantic": base,
+                    "negatives": -penalty,
+                    "aversion": -effect.penalty,
+                    "affinity": effect.boost,
+                },
+                "top": top_label if attr else None,
+                "flags": effect.flags,
+            }
             per_query[pid] = attr
             if doc is not None:
                 doc_centroids[pid] = list(doc)
             else:
                 doc_centroids[pid] = list(np.mean(chunks, axis=0))
             payloads[pid] = payload
+
+        # Relative match: rank each fit against every candidate scored for this request.
+        pool = list(fits.values())
+        match_infos = {
+            pid: MatchInfo(
+                percent=match_percent(fit, pool),
+                fit=fit,
+                pool_size=len(pool),
+                reliable=len(pool) >= RELIABLE_POOL,
+                components=match_parts[pid]["components"],
+                top_attribution=match_parts[pid]["top"],
+                flags=match_parts[pid]["flags"],
+            )
+            for pid, fit in fits.items()
+        }
 
         # Author diversity: keep at most N per author before MMR
         by_author: dict[str, list[str]] = defaultdict(list)
@@ -174,9 +215,15 @@ class RecommendationEngine:
         diverse_ids = [pid for ids in by_author.values() for pid in ids]
         diverse_ids.sort(key=lambda i: -scores[i])
 
+        # MMR trades relevance against redundancy, so relevance has to live on the same
+        # 0-1 scale as the similarity it is traded against. Raw scores are cosines in a
+        # band ~0.05 wide and diversity would swamp them (the feed would order by
+        # variety, not fit); a post's percentile in the scored pool spreads them out.
+        pool_scores = list(scores.values())
+        relevance = {pid: percentile_rank(sc, pool_scores) / 100.0 for pid, sc in scores.items()}
         selected = mmr(
             diverse_ids,
-            scores,
+            relevance,
             doc_centroids,
             k=k,
             lambda_=self.settings.mmr_lambda,
@@ -190,6 +237,7 @@ class RecommendationEngine:
                 payload=payloads[pid],
                 per_query_scores=per_query[pid],
                 reason=reasons[pid],
+                match=match_infos[pid],
             )
             for pid in selected
         ]

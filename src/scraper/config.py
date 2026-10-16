@@ -23,6 +23,7 @@ class Settings(BaseSettings):
     mongo_uri: str | None = None
     mongo_users_collection: str = "users"
     mongo_interactions_collection: str = "interactions"
+    mongo_tags_collection: str = "tags"
 
     http_timeout_seconds: float = 30.0
     http_user_agent: str = "content-scraper/0.1 (+https://github.com/devrev/data)"
@@ -43,6 +44,8 @@ class Settings(BaseSettings):
     litellm_api_base: str | None = None
     litellm_embedding_model: str = "gemini/gemini-embedding-001"
     litellm_llm_model: str = "openai/gemini-2.5-flash"
+    # Upper bound only. Thinking models spend part of it on reasoning before the JSON.
+    llm_max_output_tokens: int = 8192
 
     # Qdrant
     qdrant_url: str = "http://localhost:6333"
@@ -66,6 +69,11 @@ class Settings(BaseSettings):
     interest_centroid_k: int = 6
     persona_refresh_every: int = 10
     weight_version: str = "default_v1"
+
+    # Canonical tag vocabulary: labels closer than this cosine collapse into one tag.
+    tag_cluster_threshold: float = 0.85
+    # Looser cosine for mapping a free-form label onto a (coarse) theme centroid.
+    theme_resolve_threshold: float = 0.75
 
     # API
     api_host: str = "0.0.0.0"

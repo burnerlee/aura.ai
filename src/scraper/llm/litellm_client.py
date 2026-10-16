@@ -128,7 +128,7 @@ class LiteLLMClient:
                 model=self.settings.litellm_llm_model,
                 messages=messages,
                 response_format={"type": "json_object"},
-                max_tokens=2048,
+                max_tokens=self.settings.llm_max_output_tokens,
                 **self._completion_kwargs(),
             )
         text = response.choices[0].message.content or "{}"

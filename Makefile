@@ -2,7 +2,7 @@
 
 .PHONY: help setup venv install install-dev env mongo-up mongo-down mongo-logs mongo-reset \
 	qdrant-up qdrant-down ping connectors scrape-substack discover reload-clean list-docs \
-	embed embed-status search serve lint test clean \
+	embed embed-status tags search serve lint test clean \
 	web-install web-codegen web-api web-ui web-ui-demo
 
 # Prefer 3.11+ when available (macOS system python is often 3.9).
@@ -103,6 +103,9 @@ embed: ## Embed pending posts into Qdrant (LIMIT=N SOURCE=…)
 
 embed-status: ## Show embedding status counts
 	@$(SCRAPER) embed-status
+
+tags: ## Build canonical tag vocabulary from facets and tag posts (THRESHOLD=0.85)
+	@$(SCRAPER) tags build $(if $(THRESHOLD),--threshold $(THRESHOLD),)
 
 search: ## Semantic search (QUERY="…" K=10)
 	@$(SCRAPER) search "$(QUERY)" -k $(K)

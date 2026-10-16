@@ -21,23 +21,28 @@ from scraper.api.posts import (
 )
 from scraper.api.schemas import (
     AuraChatRequest,
+    DNAImportRequest,
     EventsRequest,
     OnboardRequest,
     SearchRequest,
     TuneRequest,
 )
 from scraper.embedding.worker import embed_by_ids
+from scraper.models.tag import TagKind
+from scraper.models.user import DNAPatch, EventType, Interaction
 from scraper.profile.aura import AuraChatMessage, AuraProfileDraft
-from scraper.models.user import EventType, Interaction
+from scraper.profile.dna import DNAVersionConflict
 from scraper.profile.service import UserProfileService
 from scraper.query.engine import RecommendationEngine
 from scraper.query.types import Filters
+from scraper.tags.service import TagService
 
 
 def create_app(
     *,
     engine: RecommendationEngine | None = None,
     profiles: UserProfileService | None = None,
+    tags: TagService | None = None,
 ) -> FastAPI:
     app = FastAPI(title="Content Recommendation API", version="0.1.0")
     app.add_middleware(
@@ -51,6 +56,7 @@ def create_app(
     engine = engine or RecommendationEngine()
     profiles = profiles or UserProfileService(engine=engine)
     store = engine.store
+    tag_service = tags or TagService(store=store, vectors=engine.vectors)
 
     @app.get("/health")
     @app.get("/healthz")
@@ -135,14 +141,23 @@ def create_app(
     def events(user_id: str, body: EventsRequest) -> dict[str, Any]:
         # UI mapping: resonate → like, banish → not_interested, bookmark → save.
         # ``post_id`` must be the Mongo ``_id`` string from FeedCard.id.
-        profile = None
+        outcome = None
         for ev in body.events:
             interaction = Interaction(user_id=user_id, **ev.model_dump())
-            profile = profiles.record_event(interaction)
+            outcome = profiles.record_event_outcome(interaction)
+        profile = outcome.profile if outcome else None
         return {
             "ok": True,
             "count": len(body.events),
             "persona_version": profile.persona_version if profile else None,
+            # The DNA after learning from these events, so the UI can update in place.
+            "dna": profile.dna.model_dump(mode="json") if profile else None,
+            # From the last event: attributes of a skipped post to offer as chips, and
+            # newly mined avoidances awaiting the user's confirm / dismiss.
+            "noticed": [n.model_dump(mode="json") for n in outcome.noticed] if outcome else [],
+            "proposals": (
+                [r.model_dump(mode="json") for r in outcome.proposals] if outcome else []
+            ),
         }
 
     @app.post("/users/{user_id}/tune")
@@ -153,9 +168,44 @@ def create_app(
         profile = profiles.record_event(interaction)
         return {"persona": profile.persona.model_dump(), "version": profile.persona_version}
 
+    @app.get("/tags")
+    def list_tags(
+        kind: TagKind | None = None,
+        limit: int = Query(default=100, ge=1, le=500),
+        min_docs: int = Query(default=1, ge=0),
+    ) -> list[dict[str, Any]]:
+        """Canonical tag vocabulary (topics / styles), most common first."""
+        return tag_service.list_public(kind=kind, limit=limit, min_docs=min_docs)
+
+    @app.get("/users/{user_id}/dna")
+    def get_dna(user_id: str) -> dict[str, Any]:
+        return profiles.get_dna(user_id).model_dump(mode="json")
+
+    @app.patch("/users/{user_id}/dna")
+    def patch_dna(user_id: str, body: DNAPatch) -> dict[str, Any]:
+        try:
+            dna = profiles.patch_dna(user_id, body)
+        except DNAVersionConflict as exc:
+            raise HTTPException(
+                status_code=409,
+                detail={"message": str(exc), "current_version": exc.current_version},
+            ) from exc
+        return dna.model_dump(mode="json")
+
+    @app.post("/users/{user_id}/dna/import")
+    def import_dna(user_id: str, body: DNAImportRequest) -> dict[str, Any]:
+        """One-time adoption of the browser's local DNA; a no-op if the server has one."""
+        dna, imported = profiles.import_dna(
+            user_id,
+            vector=body.vector,
+            prompt=body.prompt,
+            excluded=body.excluded_categories,
+        )
+        return {"imported": imported, "dna": dna.model_dump(mode="json")}
+
     @app.get("/users/{user_id}/profile")
     def get_profile(user_id: str) -> dict[str, Any]:
-        profile = profiles.get_or_create(user_id)
+        profile = profiles.ensure_dna(profiles.get_or_create(user_id))
         # Keep Aura chat memory server-side; UI never needs the transcript.
         data = profile.model_dump()
         data.pop("aura_conversation", None)
@@ -209,6 +259,7 @@ def create_app(
             if body.apply:
                 payload["persona"] = profile.persona.model_dump()
                 payload["persona_version"] = profile.persona_version
+                payload["dna"] = profile.dna.model_dump(mode="json")
             payload["conversation_turns"] = len(profile.aura_conversation)
         return payload
 

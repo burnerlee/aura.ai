@@ -9,17 +9,25 @@ import {
   createPost,
   discoverPosts,
   getPost,
+  getUserDna,
   getUserFeed,
   getUserPair,
+  importUserDna,
+  patchUserDna,
   postUserEvents,
   searchPosts,
   similarPosts,
   tuneUser,
   type AuraChatRequest,
   type AuraChatResponse,
+  type DnaPatch,
+  type EventsResponse,
   type FeedCard,
+  type InterestDna,
 } from "@workspace/api-client-react";
 import {
+  DEMO_PROFILE,
+  dnaToProfile,
   interestProfileFromAura,
   localAuraTurn,
   mapApiFeedCardToPost,
@@ -28,9 +36,36 @@ import {
   type FeedPost,
   type FeedbackDirection,
   type InterestProfile,
+  type ServerDnaRule,
+  type ServerNoticed,
 } from "@workspace/aura-shared";
 import { getOrCreateUserId } from "@/lib/user-id";
 import { useDemoMode } from "@/lib/live-mode";
+
+/** Where the pre-server-side Interest DNA lived; read once to migrate it, never written in live mode. */
+export const LOCAL_PROFILE_KEY = "aura:interest-profile:v1";
+
+/** What Aura noticed about a post the user just reacted to. */
+export interface FeedbackInsight {
+  post: FeedPost;
+  /** Attributes of the post, as one-tap "avoid this" chips. */
+  noticed: ServerNoticed[];
+  /** Avoidances the server mined and wants confirmed or dismissed. */
+  proposals: ServerDnaRule[];
+}
+
+function isConflict(err: unknown): boolean {
+  return typeof err === "object" && err !== null && (err as { status?: number }).status === 409;
+}
+
+function readStoredProfile(): InterestProfile | null {
+  try {
+    const raw = localStorage.getItem(LOCAL_PROFILE_KEY);
+    return raw ? (JSON.parse(raw) as InterestProfile) : null;
+  } catch {
+    return null;
+  }
+}
 
 function mapAuraResponse(res: AuraChatResponse): AuraTurn {
   return {
@@ -78,6 +113,39 @@ export function useRecommendationFeed(demoPosts: FeedPost[]) {
   const [localOverlay, setLocalOverlay] = useState<FeedPost[]>([]);
   const [similarResults, setSimilarResults] = useState<FeedPost[] | null>(null);
   const [similarSeedId, setSimilarSeedId] = useState<string | null>(null);
+  const [insight, setInsight] = useState<FeedbackInsight | null>(null);
+  const dnaKey = useMemo(() => ["dna", userId] as const, [userId]);
+
+  // The server owns the Interest DNA; the UI only renders it.
+  const dnaQuery = useQuery({
+    queryKey: dnaKey,
+    queryFn: () => getUserDna(userId),
+    enabled: !demo,
+    staleTime: 15_000,
+  });
+  const dna = !demo ? (dnaQuery.data ?? null) : null;
+  const profile = useMemo(() => (dna ? dnaToProfile(dna) : null), [dna]);
+
+  // One-time migration of a DNA tuned in the browser before it moved server-side.
+  useEffect(() => {
+    if (demo || !dnaQuery.data || dnaQuery.data.version > 0) return;
+    const flag = `aura:dna-imported:${userId}`;
+    if (localStorage.getItem(flag)) return;
+    localStorage.setItem(flag, "1");
+    if (!localStorage.getItem(`aura:onboarded:${userId}`)) return;
+    const local = readStoredProfile();
+    // The stored default is the demo profile, not something the user chose.
+    if (!local || JSON.stringify(local.vector) === JSON.stringify(DEMO_PROFILE.vector)) return;
+    importUserDna(userId, {
+      vector: local.vector,
+      prompt: local.prompt,
+      excluded_categories: local.excludedCategories,
+    })
+      .then((res) => {
+        if (res.imported) queryClient.setQueryData(dnaKey, res.dna);
+      })
+      .catch(() => localStorage.removeItem(flag));
+  }, [demo, dnaKey, dnaQuery.data, queryClient, userId]);
 
   const feedQuery = useQuery({
     queryKey: ["feed", userId],
@@ -129,17 +197,58 @@ export function useRecommendationFeed(demoPosts: FeedPost[]) {
     [demo],
   );
 
+  const applyEventsResponse = useCallback(
+    (post: FeedPost, res: EventsResponse) => {
+      // The server already learned from the event; show exactly what it now holds.
+      if (res.dna) queryClient.setQueryData(dnaKey, res.dna);
+      const noticed = res.noticed ?? [];
+      const proposals = res.proposals ?? [];
+      setInsight(noticed.length || proposals.length ? { post, noticed, proposals } : null);
+    },
+    [dnaKey, queryClient],
+  );
+
   const recordFeedback = useCallback(
     async (post: FeedPost, direction: FeedbackDirection) => {
       if (demo) return;
       const event = direction === "resonate" ? "like" : "not_interested";
-      await postUserEvents(userId, {
-        events: [{ post_id: post.id, event }],
+      const res = await postUserEvents(userId, {
+        events: [
+          {
+            post_id: post.id,
+            event,
+            // What the card showed, so a confident miss counts for more than an expected one.
+            match_percent: post.match?.percent ?? undefined,
+            matched_label: post.match?.topAttribution,
+          },
+        ],
       });
+      applyEventsResponse(post, res);
       void queryClient.invalidateQueries({ queryKey: ["feed", userId] });
     },
-    [demo, queryClient, userId],
+    [applyEventsResponse, demo, queryClient, userId],
   );
+
+  /** Edit the DNA (drag a slice, confirm or remove a rule); retries once on a stale version. */
+  const patchDna = useCallback(
+    async (patch: Omit<DnaPatch, "base_version">): Promise<InterestDna | null> => {
+      if (demo) return null;
+      const send = (version: number) => patchUserDna(userId, { ...patch, base_version: version });
+      let next: InterestDna;
+      try {
+        next = await send(queryClient.getQueryData<InterestDna>(dnaKey)?.version ?? 0);
+      } catch (err) {
+        if (!isConflict(err)) throw err;
+        next = await send((await getUserDna(userId)).version);
+      }
+      queryClient.setQueryData(dnaKey, next);
+      void queryClient.invalidateQueries({ queryKey: ["feed", userId] });
+      return next;
+    },
+    [demo, dnaKey, queryClient, userId],
+  );
+
+  const dismissInsight = useCallback(() => setInsight(null), []);
 
   const recordSave = useCallback(
     async (post: FeedPost, saved: boolean) => {
@@ -224,6 +333,7 @@ export function useRecommendationFeed(demoPosts: FeedPost[]) {
         const res = await chatWithAura(userId, body);
         if (apply && res.ready) {
           localStorage.setItem(`aura:onboarded:${userId}`, "1");
+          if (res.dna) queryClient.setQueryData(dnaKey, res.dna);
           void queryClient.invalidateQueries({ queryKey: ["feed", userId] });
         }
         return mapAuraResponse(res);
@@ -232,7 +342,7 @@ export function useRecommendationFeed(demoPosts: FeedPost[]) {
         return localAuraTurn(messages, knownThemes);
       }
     },
-    [demo, queryClient, userId],
+    [demo, dnaKey, queryClient, userId],
   );
 
   const applyAuraProfile = useCallback(
@@ -259,16 +369,20 @@ export function useRecommendationFeed(demoPosts: FeedPost[]) {
             preferred_emotions: turn.profile.preferred_emotions,
           },
         };
-        await chatWithAura(userId, body);
+        const res = await chatWithAura(userId, body);
         localStorage.setItem(`aura:onboarded:${userId}`, "1");
         void queryClient.invalidateQueries({ queryKey: ["feed", userId] });
+        if (res.dna) {
+          queryClient.setQueryData(dnaKey, res.dna);
+          return dnaToProfile(res.dna);
+        }
       } catch {
         await tune(local);
         localStorage.setItem(`aura:onboarded:${userId}`, "1");
       }
       return local;
     },
-    [demo, queryClient, tune, userId],
+    [demo, dnaKey, queryClient, tune, userId],
   );
 
   const fetchPair = useCallback(async (): Promise<FeedPost[]> => {
@@ -282,7 +396,7 @@ export function useRecommendationFeed(demoPosts: FeedPost[]) {
   const preferPair = useCallback(
     async (winner: FeedPost, loser: FeedPost) => {
       if (demo) return;
-      await postUserEvents(userId, {
+      const res = await postUserEvents(userId, {
         events: [
           {
             post_id: winner.id,
@@ -297,9 +411,10 @@ export function useRecommendationFeed(demoPosts: FeedPost[]) {
           },
         ],
       });
+      if (res.dna) queryClient.setQueryData(dnaKey, res.dna);
       void queryClient.invalidateQueries({ queryKey: ["feed", userId] });
     },
-    [demo, queryClient, userId],
+    [demo, dnaKey, queryClient, userId],
   );
 
   const loadSimilar = useCallback(
@@ -327,6 +442,13 @@ export function useRecommendationFeed(demoPosts: FeedPost[]) {
   return {
     demo,
     userId,
+    /** Server Interest DNA rendered for the UI; null in demo mode or before it loads. */
+    dna,
+    profile,
+    dnaLoading: !demo && dnaQuery.isLoading,
+    patchDna,
+    insight,
+    dismissInsight,
     posts: remotePosts,
     discoverPosts: discoverPostsMapped,
     searchResults,

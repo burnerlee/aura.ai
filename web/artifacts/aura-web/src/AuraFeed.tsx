@@ -6,14 +6,15 @@ import {
   Waves, X, FileText, PenLine, Code2, Image as ImageIcon, ExternalLink,
 } from 'lucide-react';
 import {
-  adjustInterestVector, CATEGORIES, DEMO_POSTS, DEMO_PROFILE, categoriesMatch, discoverThemes,
-  explainPostMatch, getEmbedPreview, interestProfileFromAura, matchPercent,
-  mergeThemesIntoVector, normalizeVector, postSourceUrl, rankPosts, themeColor, themeKey, themeMeta,
+  adjustInterestVector, CATEGORIES, DEMO_POSTS, DEMO_PROFILE, EMPTY_PROFILE, cardMatchPercent,
+  categoriesMatch, discoverThemes, displayTags, dnaThemes, explainPostMatch, explainRelativeMatch,
+  getEmbedPreview, humanizeKey, interestProfileFromAura, normalizeVector, postSourceUrl,
+  rankPosts, themeColor, themeKey, themeMeta,
   type AuraChatMessage, type AuraOption, type AuraTurn, type CategoryMeta,
   type FeedPost, type FeedbackDirection, type InterestCategoryId, type InterestProfile,
-  type InterestVector,
+  type InterestVector, type ServerDna, type ServerDnaRule, type ServerNoticed,
 } from '@workspace/aura-shared';
-import { useRecommendationFeed } from '@/hooks/use-recommendation-feed';
+import { LOCAL_PROFILE_KEY, useRecommendationFeed, type FeedbackInsight } from '@/hooks/use-recommendation-feed';
 import { shortUserId, shortUserLabel } from '@/lib/user-id';
 
 const AURA_CHAT_KEY = 'aura:chat-complete:v1';
@@ -35,7 +36,7 @@ type AuraPointBurst = {
   toX: number;
   toY: number;
 };
-const PROFILE_KEY = 'aura:interest-profile:v1';
+const PROFILE_KEY = LOCAL_PROFILE_KEY;
 const POSTS_KEY = 'aura:feed-posts:v1';
 const SAVED_KEY = 'aura:saved:v1';
 const SAVED_POSTS_KEY = 'aura:saved-posts:v1';
@@ -69,12 +70,14 @@ function weightsForThemes(themes: CategoryMeta[], vector: InterestVector): Inter
   return normalizeVector(raw);
 }
 
-function InterestPanel({ profile, themes, onEdit, variant, pointBurst }: {
+function InterestPanel({ profile, themes, onEdit, variant, pointBurst, dna, onRemoveRule }: {
   profile: InterestProfile;
   themes: CategoryMeta[];
   onEdit: () => void;
   variant: 'current' | 'glass';
   pointBurst?: AuraPointBurst | null;
+  dna?: ServerDna | null;
+  onRemoveRule?: (rule: ServerDnaRule) => void;
 }) {
   const radius = 48, circumference = 2 * Math.PI * radius;
   let offset = 0;
@@ -116,12 +119,72 @@ function InterestPanel({ profile, themes, onEdit, variant, pointBurst }: {
         </span>
       </div>;
     }) : <p className="vector-note">Themes appear once posts are in your feed.</p>}</div>
+    <RuleList dna={dna} onRemove={onRemoveRule}/>
     <div className="interest-prompt"><span className="prompt-label"><Sparkles size={12}/> AURA LEARNED</span><p>“{profile.prompt}”</p><button className="text-action" onClick={onEdit}>Chat with Aura <ArrowUpRight size={13}/></button></div>
     <div className="vector-note"><span className="vector-pulse"/>Every resonate or banish updates this profile.</div>
   </aside>;
 }
-function PostCard({ post, profile, saved, onFeedback, onToggleSaved, variant, why, onSimilar, spotlight }: {
+function ruleName(rule: ServerDnaRule): string { return rule.label || humanizeKey(rule.key); }
+const RULE_SOURCE_HINT: Record<string, string> = {
+  chat: 'From your chat with Aura',
+  learned: 'Learned from what you skipped',
+  confirmed: 'Confirmed by you',
+};
+/** What the user avoids / leans toward within their themes, learned from feedback or chat. */
+function RuleList({ dna, onRemove }: { dna?: ServerDna | null; onRemove?: (rule: ServerDnaRule) => void }) {
+  if (!dna || (!dna.anti.length && !dna.affinities.length)) return null;
+  return <div className="dna-rules">
+    {dna.anti.length > 0 && <div className="dna-rule-group"><span className="rule-heading">AVOIDING</span>
+      {dna.anti.map(rule => <span key={`${rule.kind}:${rule.key}`} className={`rule-chip anti ${rule.source ?? ''}`} title={RULE_SOURCE_HINT[rule.source ?? 'chat']}>
+        {ruleName(rule)}{rule.source === 'learned' && <em>learned</em>}
+        {onRemove && <button type="button" aria-label={`Stop avoiding ${ruleName(rule)}`} onClick={() => onRemove(rule)}><X size={10}/></button>}
+      </span>)}
+    </div>}
+    {dna.affinities.length > 0 && <div className="dna-rule-group"><span className="rule-heading">LEANING TOWARD</span>
+      {dna.affinities.map(rule => <span key={`${rule.kind}:${rule.key}`} className="rule-chip affinity" title="Learned from what you liked">{ruleName(rule)}</span>)}
+    </div>}
+  </div>;
+}
+/** After a banish: offer what stood out about the post, and any pattern the server mined. */
+function NoticedPanel({ insight, onAvoid, onConfirm, onReject, onClose }: {
+  insight: FeedbackInsight;
+  onAvoid: (attr: ServerNoticed) => Promise<void>;
+  onConfirm: (rule: ServerDnaRule) => Promise<void>;
+  onReject: (rule: ServerDnaRule) => Promise<void>;
+  onClose: () => void;
+}) {
+  const [handled, setHandled] = useState<string[]>([]);
+  useEffect(() => {
+    setHandled([]);
+    const timer = window.setTimeout(onClose, 15000);
+    return () => window.clearTimeout(timer);
+  }, [insight, onClose]);
+  const keyOf = (kind: string, key: string) => `${kind}:${key}`;
+  const mark = (id: string) => setHandled(current => [...current, id]);
+  const proposals = insight.proposals.filter(rule => !handled.includes(keyOf(rule.kind, rule.key)));
+  const noticed = insight.noticed.filter(attr => !handled.includes(keyOf(attr.kind, attr.key)));
+  if (!proposals.length && !noticed.length) return null;
+  return <aside className="noticed-panel" role="status" aria-live="polite">
+    <div className="noticed-head"><span><Sparkles size={12}/> WHAT I NOTICED</span><button type="button" className="noticed-close" aria-label="Dismiss" onClick={onClose}><X size={12}/></button></div>
+    {proposals.map(rule => <div className="noticed-proposal" key={keyOf(rule.kind, rule.key)}>
+      <p>Seems you skip <b>{ruleName(rule)}</b> posts, even within themes you like. Avoid them?</p>
+      <div className="noticed-actions">
+        <button type="button" onClick={() => { mark(keyOf(rule.kind, rule.key)); void onConfirm(rule); }}>Yes, avoid</button>
+        <button type="button" className="quiet" onClick={() => { mark(keyOf(rule.kind, rule.key)); void onReject(rule); }}>No</button>
+      </div>
+    </div>)}
+    {noticed.length > 0 && <>
+      <p className="noticed-lead">About “{insight.post.title ?? 'that post'}”. Tap anything you would rather not see:</p>
+      <div className="noticed-chips">{noticed.map(attr => <button type="button" key={keyOf(attr.kind, attr.key)} className="noticed-chip" onClick={() => { mark(keyOf(attr.kind, attr.key)); void onAvoid(attr); }}>
+        {attr.label}{attr.seen > 1 && <small>skipped {attr.negative} of {attr.seen}</small>}
+      </button>)}</div>
+    </>}
+  </aside>;
+}
+function PostCard({ post, profile, saved, demo, onFeedback, onToggleSaved, variant, why, onSimilar, spotlight }: {
   post: FeedPost; profile: InterestProfile; saved: boolean;
+  /** Demo mode has no backend, so the local keyword heuristic stands in for a match. */
+  demo: boolean;
   variant: 'current' | 'glass';
   why?: string;
   spotlight?: boolean;
@@ -132,8 +195,18 @@ function PostCard({ post, profile, saved, onFeedback, onToggleSaved, variant, wh
   const [showInsight, setShowInsight] = useState(false), [delta, setDelta] = useState(0), [signal, setSignal] = useState<FeedbackDirection | null>(null);
   const start = useRef<number | null>(null), category = themeMeta(post.category);
   const cardRef = useRef<HTMLElement | null>(null);
-  const match = useMemo(() => matchPercent(post, profile), [post, profile]);
-  const insight = useMemo(() => why || explainPostMatch(post, profile), [post, profile, why]);
+  const match = useMemo(() => cardMatchPercent(post, profile, { heuristic: demo }), [post, profile, demo]);
+  const insight = useMemo(() => {
+    if (!post.match) {
+      if (demo) return why || explainPostMatch(post, profile);
+      return why || 'Not scored against your Interest DNA yet. Resonate or banish to teach Aura what you want.';
+    }
+    // "matched your X interest" repeats the attribution already in the relative text.
+    const extra = why && !why.toLowerCase().startsWith('matched your') ? ` ${why}` : '';
+    return `${explainRelativeMatch(post)}${extra}`;
+  }, [post, profile, why, demo]);
+  const tags = useMemo(() => displayTags(post), [post]);
+  const avoided = post.match?.flags.filter(flag => flag.kind === 'aversion') ?? [];
   const sourceUrl = postSourceUrl(post);
   function emitFeedback(direction: FeedbackDirection) {
     const origin = cardRef.current?.getBoundingClientRect() ?? new DOMRect(window.innerWidth / 2, window.innerHeight / 2, 0, 0);
@@ -176,10 +249,12 @@ function PostCard({ post, profile, saved, onFeedback, onToggleSaved, variant, wh
          <a className={`embed-preview embed-${post.platform?.toLowerCase() ?? 'link'}`} href={sourceUrl} target="_blank" rel="noreferrer" data-no-swipe><span className="embed-orbit"><ArrowUpRight size={15}/></span><span className="embed-copy"><strong>{post.platform || 'External link'}</strong><small>{sourceUrl.replace(/^https?:\/\//,'').replace(/\/$/,'')}</small></span><ExternalLink className="embed-arrow" size={14}/></a>)}
       {post.kind !== 'embed' && sourceUrl && <a className="post-open-source" href={sourceUrl} target="_blank" rel="noopener noreferrer" data-no-swipe>Open original <ExternalLink size={12}/></a>}
       <div className="post-meta-row">
-        <span className="match-chip" title="Profile match"><Sparkles size={11}/>{match}% match</span>
-        {post.tags.length > 0 && <div className="post-tags">{post.tags.slice(0,3).map(tag => <span key={tag}>#{tag.replace(/\s+/g,'')}</span>)}</div>}
+        {match !== null && <span className="match-chip" title={post.match ? `Closer to you than ${match}% of the ${post.match.poolSize} posts considered` : 'Profile match'}><Sparkles size={11}/>{match}% match</span>}
+        {avoided.map(flag => <span key={flag.ruleKey} className="match-flag" title="You have skipped posts like this">usually not your style · {flag.label}</span>)}
+        {tags.length > 0 ? <div className="post-tags">{tags.map(tag => <span key={tag.id} className={tag.kind === 'style' ? 'tag-style' : undefined}>#{tag.label.replace(/\s+/g,'')}</span>)}</div>
+          : post.tags.length > 0 && <div className="post-tags">{post.tags.slice(0,3).map(tag => <span key={tag}>#{tag.replace(/\s+/g,'')}</span>)}</div>}
       </div>
-      {showInsight && <div className="insight-panel"><span className="insight-icon"><Sparkles size={13}/></span><p>{insight} <small>{why ? 'Recommendation explanation.' : 'Profile match · Interest DNA.'}</small></p></div>}
+      {showInsight && <div className="insight-panel"><span className="insight-icon"><Sparkles size={13}/></span><p>{insight} <small>{post.match ? 'Relative match · your Interest DNA.' : why ? 'Recommendation explanation.' : demo ? 'Profile match · Interest DNA.' : 'Browse · not personalized.'}</small></p></div>}
       <div className="post-footer"><div className="engagement"><span><Heart size={14}/>{post.likes.toLocaleString()}</span><span><MessageCircle size={14}/>{post.comments}</span>{onSimilar && <button className="text-action" data-no-swipe onClick={() => onSimilar(post)} style={{marginLeft:8}}><Sparkles size={12}/> More like this</button>}</div><div className="post-actions" data-no-swipe><button className={`save-button ${saved ? 'selected' : ''}`} onClick={() => onToggleSaved(post)} aria-label={saved ? 'Remove from collection' : 'Save to collection'}><Bookmark size={15} fill={saved ? 'currentColor' : 'none'}/></button><button className={`feedback-button resonate-button ${post.resonated ? 'selected' : ''}`} onClick={() => emitFeedback('resonate')} aria-label="Resonate with this post"><Heart size={14} fill={post.resonated ? 'currentColor' : 'none'}/><span>Resonate</span></button><button className={`feedback-button banish-button ${post.banished ? 'selected' : ''}`} onClick={() => emitFeedback('banish')} aria-label="Banish this post"><ThumbsDown size={14} fill={post.banished ? 'currentColor' : 'none'}/></button></div></div>
     </div>
   </article>;
@@ -474,7 +549,7 @@ function ComposerModal({ onClose, onPublish, variant, live }: { onClose: () => v
   </section></div>;
 }
 export function AuraFeed({ variant = 'current' }: { variant?: 'current' | 'glass' }) {
-  const [profile,setProfile] = useState<InterestProfile>(() => readLocal(PROFILE_KEY,DEMO_PROFILE));
+  const [localProfile,setLocalProfile] = useState<InterestProfile>(() => readLocal(PROFILE_KEY,DEMO_PROFILE));
   const [demoPosts,setDemoPosts] = useState<FeedPost[]>(() => readLocal(POSTS_KEY,DEMO_POSTS));
   const [savedIds,setSavedIds] = useState<string[]>(() => readLocal(SAVED_KEY,[]));
   const [savedPosts,setSavedPosts] = useState<Record<string, FeedPost>>(() => readLocal(SAVED_POSTS_KEY,{}));
@@ -502,6 +577,8 @@ export function AuraFeed({ variant = 'current' }: { variant?: 'current' | 'glass
   const burstTimer = useRef<number | undefined>(undefined);
   const navHitTimer = useRef<number | undefined>(undefined);
   const live = useRecommendationFeed(demoPosts);
+  // Demo mode keeps its own local DNA; live mode only renders what the server holds.
+  const profile: InterestProfile = live.demo ? localProfile : (live.profile ?? EMPTY_PROFILE);
   function beginIntroRise() {
     if (!introScrollArmed.current) return;
     introScrollArmed.current = false;
@@ -634,10 +711,15 @@ export function AuraFeed({ variant = 'current' }: { variant?: 'current' | 'glass
     return posts;
   }, [live.similarResults, live.demo, live.searchResults, live.discoverPosts, search, section, savedIds, savedPosts, posts]);
   // DNA / Aura chat: all loaded content. Filter chips: only themes present in this section.
-  const themes = useMemo(
+  const discoveredThemes = useMemo(
     () => discoverThemes(themeSourcePosts, profile.vector, 10),
     [themeSourcePosts, profile.vector],
   );
+  // Live: the ring shows the server DNA itself, not whichever themes happen to be loaded.
+  const themes = useMemo(() => {
+    const fromDna = dnaThemes(live.dna, 10);
+    return fromDna.length ? fromDna : discoveredThemes;
+  }, [live.dna, discoveredThemes]);
   const filterThemes = useMemo(
     () => discoverThemes(sectionPool, profile.vector, 10),
     [sectionPool, profile.vector],
@@ -649,18 +731,6 @@ export function AuraFeed({ variant = 'current' }: { variant?: 'current' | 'glass
     }
   }, [activeCategory, filterThemes]);
   useEffect(() => {
-    if (live.demo) return;
-    const ids = themes.map((item) => item.id);
-    setProfile((current) => {
-      const merged = mergeThemesIntoVector(current.vector, ids);
-      if (Object.keys(merged).length === Object.keys(current.vector).length
-        && Object.keys(merged).every((key) => Math.abs((merged[key] ?? 0) - (current.vector[key] ?? 0)) < 0.05)) {
-        return current;
-      }
-      return { ...current, vector: merged };
-    });
-  }, [live.demo, themes]);
-  useEffect(() => {
     if (!profilePopoverOpen) return;
     const closeOnEscape = (event: KeyboardEvent) => { if (event.key === 'Escape') setProfilePopoverOpen(false); };
     const closeOnOutside = (event: globalThis.PointerEvent) => {
@@ -670,7 +740,7 @@ export function AuraFeed({ variant = 'current' }: { variant?: 'current' | 'glass
     document.addEventListener('pointerdown', closeOnOutside);
     return () => { document.removeEventListener('keydown', closeOnEscape); document.removeEventListener('pointerdown', closeOnOutside); };
   }, [profilePopoverOpen]);
-  useEffect(() => { localStorage.setItem(PROFILE_KEY,JSON.stringify(profile)); },[profile]);
+  useEffect(() => { if (live.demo) localStorage.setItem(PROFILE_KEY,JSON.stringify(localProfile)); },[localProfile, live.demo]);
   useEffect(() => { if (live.demo) localStorage.setItem(POSTS_KEY,JSON.stringify(demoPosts)); },[demoPosts, live.demo]);
   useEffect(() => {
     if (live.demo) return;
@@ -733,10 +803,28 @@ export function AuraFeed({ variant = 'current' }: { variant?: 'current' | 'glass
       void live.recordFeedback(post, direction);
     }
     const vectorDir = direction === 'resonate' ? 'up' : 'down';
-    setProfile(current => ({ ...current,vector:adjustInterestVector(current.vector,post.category,vectorDir) }));
+    if (live.demo) setLocalProfile(current => ({ ...current,vector:adjustInterestVector(current.vector,post.category,vectorDir) }));
     spawnAuraPoints(post.category, vectorDir, origin);
     const label=themeMeta(post.category).shortLabel; notify(direction==='resonate'?`+${AURA_POINT_STEP} Aura · more ${label}`:`−${AURA_POINT_STEP} Aura · less ${label}`);
     dismissSwipeCoach();
+  }
+  async function avoidAttr(attr: ServerNoticed) {
+    try {
+      await live.patchDna({ add_anti: [{ kind: attr.kind, key: attr.key, label: attr.label, strength: 1 }] });
+      notify(`Got it. Fewer ${attr.label} posts`);
+    } catch { notify('Could not save that'); }
+  }
+  async function confirmRule(rule: ServerDnaRule) {
+    try {
+      await live.patchDna({ add_anti: [{ kind: rule.kind, key: rule.key, label: rule.label, strength: rule.strength }] });
+      notify(`Avoiding ${ruleName(rule)} from now on`);
+    } catch { notify('Could not save that'); }
+  }
+  async function dropRule(rule: ServerDnaRule) {
+    try {
+      await live.patchDna({ remove_anti: [rule.key] });
+      notify(`No longer avoiding ${ruleName(rule)}`);
+    } catch { notify('Could not update your DNA'); }
   }
   function toggleSaved(post: FeedPost) {
     const was=savedIds.includes(post.id), next=was?savedIds.filter(id=>id!==post.id):[...savedIds,post.id];
@@ -781,7 +869,7 @@ export function AuraFeed({ variant = 'current' }: { variant?: 'current' | 'glass
   async function pickPair(winner: FeedPost, loser: FeedPost) {
     setPairOpen(false); setPairPosts(null);
     await live.preferPair(winner, loser);
-    setProfile(current => ({ ...current, vector: adjustInterestVector(current.vector, winner.category, 'up') }));
+    if (live.demo) setLocalProfile(current => ({ ...current, vector: adjustInterestVector(current.vector, winner.category, 'up') }));
     const nav = profileNavRef.current?.getBoundingClientRect() ?? null;
     spawnAuraPoints(winner.category, 'up', nav);
     notify(`+${AURA_POINT_STEP} Aura · preferred ${themeMeta(winner.category).shortLabel}`);
@@ -834,7 +922,7 @@ export function AuraFeed({ variant = 'current' }: { variant?: 'current' | 'glass
       <button ref={profileNavRef} className={`interest-prompt-button ${navHit ? `profile-nav-hit-${navHit}` : ''}`} onClick={()=>setInterestOpen(true)}><span className="prompt-spark"><Sparkles size={14}/></span><span className="prompt-button-copy"><small>CHAT WITH AURA</small><strong>{profile.prompt}</strong></span><span className="prompt-edit">TUNE <ArrowRight size={11}/></span></button>}
       <div className="topbar-actions"><button className={`icon-button top-search ${searchOpen?'active':''}`} aria-label="Search the feed" onClick={()=>setSearchOpen(open=>!open)}><Search size={18}/></button><button className="icon-button notification-button" aria-label="Open pairwise preference" title="Pairwise pick" onClick={()=>void openPair()}><Waves size={18}/></button><button className="button button-primary create-button" onClick={()=>setComposerOpen(true)}><Plus size={16} strokeWidth={2.5}/><span>Create</span></button><button className="user-avatar" aria-label={live.demo ? 'Demo profile' : `Copy user id ${live.userId}`} title={live.demo ? 'Demo user' : live.userId} onClick={copyUserId}>{avatarLabel}</button></div>
     </header>
-    {variant === 'glass' && profilePopoverOpen && <div className="glass-profile-popover" id="glass-profile-popover" ref={profilePopoverRef} role="dialog" aria-label="Interest DNA profile"><InterestPanel profile={profile} themes={themes} variant="glass" pointBurst={pointBurst} onEdit={()=>{setProfilePopoverOpen(false);setInterestOpen(true);}}/></div>}
+    {variant === 'glass' && profilePopoverOpen && <div className="glass-profile-popover" id="glass-profile-popover" ref={profilePopoverRef} role="dialog" aria-label="Interest DNA profile"><InterestPanel profile={profile} themes={themes} variant="glass" pointBurst={pointBurst} dna={live.dna} onRemoveRule={dropRule} onEdit={()=>{setProfilePopoverOpen(false);setInterestOpen(true);}}/></div>}
     {searchOpen && <div className="search-bar"><Search size={16}/><input autoFocus value={search} onChange={event=>setSearch(event.target.value)} placeholder="Search ideas, people, or topics..." aria-label="Search ideas, people, or topics"/><button onClick={()=>{setSearch('');setSearchOpen(false);}} aria-label="Close search">×</button></div>}
     <div className="workspace"><aside className="left-rail"><span className="eyebrow rail-label">YOUR SPACE</span><nav className="main-nav" aria-label="Main navigation">
       <button className={section==='feed'?'active':''} onClick={()=>chooseSection('feed')}><House size={17}/><span>For you</span>{section==='feed'&&<i/>}</button><button className={section==='discover'?'active':''} onClick={()=>chooseSection('discover')}><Compass size={17}/><span>Discover</span>{section==='discover'&&<i/>}</button><button className={section==='saved'?'active':''} onClick={()=>chooseSection('saved')}><Bookmark size={17}/><span>Collection</span>{section==='saved'&&<i/>}</button></nav>
@@ -842,9 +930,9 @@ export function AuraFeed({ variant = 'current' }: { variant?: 'current' | 'glass
       <button className="rail-create-card" onClick={()=>setComposerOpen(true)}><span className="rail-create-icon"><Plus size={16}/></span><strong>Make something</strong><small>A thought, a story, a link.</small></button><div className="rail-footer"><span className="rail-status-dot"/> A quieter corner of the internet.</div></aside>
       <main className="feed-main"><div className="feed-topline"><div className="feed-heading"><span className="eyebrow"><span className="live-dot"/> {live.similarResults ? 'SIMILARITY' : section==='discover' ? 'DISCOVER' : 'PERSONALIZED FOR YOU'}</span><h1>{sectionTitle}<span>.</span></h1><p>{live.similarResults ? <button className="text-action" onClick={() => live.clearSimilar()}>Clear similar · back to feed</button> : section==='saved'?'The posts you wanted to keep close.':section==='discover'?'Popular and recent posts across the corpus.':'A little less noise. A lot more you.'}</p></div><div className="feed-toolbar"><button className="filter-button" onClick={()=>setInterestOpen(true)}><Waves size={14}/><span>Chat with Aura</span><ArrowDown size={12}/></button><span className="feed-count"><b>{String(visiblePosts.length).padStart(2,'0')}</b> posts</span></div></div>
         <div className="feed-filter-row"><button className={`filter-chip ${activeCategory==='all'?'active':''}`} onClick={()=>setActiveCategory('all')}>All signals</button>{filterThemes.map(category=><button className={`filter-chip ${categoriesMatch(activeCategory, category.id)?'active':''}`} key={themeKey(category.id)} onClick={()=>setActiveCategory(categoriesMatch(activeCategory, category.id)?'all':category.id)}><i style={{backgroundColor:categoryAccent(category.id, variant)}}/>{category.shortLabel}</button>)}</div>
-         {(section==='feed' && live.feedLoading) || (section==='discover' && live.discoverLoading) ? <div className="empty-state"><span className="empty-state-icon"><Sparkles size={22}/></span><h2>{section==='discover'?'Scanning the corpus…':'Tuning your feed…'}</h2><p>Loading recommendations.</p></div> : visiblePosts.length ? <div className="masonry-feed">{visiblePosts.map(post=><PostCard key={post.id} post={post} profile={profile} variant={variant} why={live.whyById[post.id]} onFeedback={feedback} saved={savedIds.includes(post.id)} onToggleSaved={toggleSaved} onSimilar={showSimilar} spotlight={showSwipeCoach && post.id === spotlightPostId}/>)}{section!=='saved'&&!live.similarResults&&<button className="feed-end-card" onClick={()=>chooseSection('discover')}><span className="end-card-icon"><Sparkles size={16}/></span><span><strong>Keep following your curiosity.</strong><small>Explore more posts in your orbit.</small></span><ArrowRight size={16}/></button>}</div> : <div className="empty-state"><span className="empty-state-icon"><Bookmark size={22}/></span><h2>{section==='saved'?'Nothing saved yet.': live.feedError ? 'Could not reach the recommendation API.' : 'No posts in this signal.'}</h2><p>{section==='saved'?'Save a post to keep it in your collection.': live.feedError ? 'Start scraper serve + api-server, or set VITE_USE_DEMO=1.' : 'Chat with Aura to reshape your signal.'}</p><button className="button button-secondary" onClick={()=>section==='saved'?chooseSection('feed'):setInterestOpen(true)}>{section==='saved'?'Back to your feed':'Chat with Aura'}</button></div>}
-         {variant === 'current' && <div className="mobile-interest-card"><InterestPanel profile={profile} themes={themes} variant={variant} pointBurst={pointBurst} onEdit={()=>setInterestOpen(true)}/></div>}
-       </main><div className="right-rail"><InterestPanel profile={profile} themes={themes} variant={variant} pointBurst={pointBurst} onEdit={()=>setInterestOpen(true)}/><div className="signal-tip"><div className="tip-heading"><span><Sparkles size={12}/></span> A small reminder</div><p>Chat with <b>Aura</b> to reshape your DNA, or use a quick <b>resonate</b> / <b>banish</b> while you browse.</p><button onClick={()=>setInterestOpen(true)}>Talk to Aura <ArrowRight size={12}/></button></div><div className="footer-links"><span>AURA · EARLY ACCESS</span><span>Made for curiosity <span className="tiny-heart">✳</span></span></div></div></div>
+         {(section==='feed' && live.feedLoading) || (section==='discover' && live.discoverLoading) ? <div className="empty-state"><span className="empty-state-icon"><Sparkles size={22}/></span><h2>{section==='discover'?'Scanning the corpus…':'Tuning your feed…'}</h2><p>Loading recommendations.</p></div> : visiblePosts.length ? <div className="masonry-feed">{visiblePosts.map(post=><PostCard key={post.id} post={post} profile={profile} demo={live.demo} variant={variant} why={live.whyById[post.id]} onFeedback={feedback} saved={savedIds.includes(post.id)} onToggleSaved={toggleSaved} onSimilar={showSimilar} spotlight={showSwipeCoach && post.id === spotlightPostId}/>)}{section!=='saved'&&!live.similarResults&&<button className="feed-end-card" onClick={()=>chooseSection('discover')}><span className="end-card-icon"><Sparkles size={16}/></span><span><strong>Keep following your curiosity.</strong><small>Explore more posts in your orbit.</small></span><ArrowRight size={16}/></button>}</div> : <div className="empty-state"><span className="empty-state-icon"><Bookmark size={22}/></span><h2>{section==='saved'?'Nothing saved yet.': live.feedError ? 'Could not reach the recommendation API.' : 'No posts in this signal.'}</h2><p>{section==='saved'?'Save a post to keep it in your collection.': live.feedError ? 'Start scraper serve + api-server, or set VITE_USE_DEMO=1.' : 'Chat with Aura to reshape your signal.'}</p><button className="button button-secondary" onClick={()=>section==='saved'?chooseSection('feed'):setInterestOpen(true)}>{section==='saved'?'Back to your feed':'Chat with Aura'}</button></div>}
+         {variant === 'current' && <div className="mobile-interest-card"><InterestPanel profile={profile} themes={themes} variant={variant} pointBurst={pointBurst} dna={live.dna} onRemoveRule={dropRule} onEdit={()=>setInterestOpen(true)}/></div>}
+       </main><div className="right-rail"><InterestPanel profile={profile} themes={themes} variant={variant} pointBurst={pointBurst} dna={live.dna} onRemoveRule={dropRule} onEdit={()=>setInterestOpen(true)}/><div className="signal-tip"><div className="tip-heading"><span><Sparkles size={12}/></span> A small reminder</div><p>Chat with <b>Aura</b> to reshape your DNA, or use a quick <b>resonate</b> / <b>banish</b> while you browse.</p><button onClick={()=>setInterestOpen(true)}>Talk to Aura <ArrowRight size={12}/></button></div><div className="footer-links"><span>AURA · EARLY ACCESS</span><span>Made for curiosity <span className="tiny-heart">✳</span></span></div></div></div>
     </div>
     <div className="aura-fly-layer" aria-hidden="true">
       {flyBursts.map((burst) => (
@@ -884,7 +972,7 @@ export function AuraFeed({ variant = 'current' }: { variant?: 'current' | 'glass
      {interestOpen&&<AuraChatModal themes={themes} variant={variant} talkToAura={live.talkToAura} revealCoach={revealChatCoach} stagedEnter={chatStagedEnter} onClose={closeAuraChat} onApply={async (next, turn, chatMessages) => {
        const applied = await live.applyAuraProfile(turn, chatMessages, themes.map((t) => t.label || t.id));
        const profileToUse = applied ?? next;
-       setProfile(profileToUse);
+       if (live.demo) setLocalProfile(profileToUse);
        localStorage.setItem(AURA_CHAT_KEY, '1');
        setInterestOpen(false);
        setChatStagedEnter(false);
@@ -909,5 +997,6 @@ export function AuraFeed({ variant = 'current' }: { variant?: 'current' | 'glass
     )}
     {composerOpen&&<ComposerModal variant={variant} live={!live.demo} onClose={()=>setComposerOpen(false)} onPublish={addPost}/>}{pairOpen&&pairPosts&&<PairModal variant={variant} left={pairPosts[0]} right={pairPosts[1]} onClose={()=>{setPairOpen(false);setPairPosts(null);}} onPick={(winner,loser)=>{void pickPair(winner,loser);}}/>}
     {toast&&<div className="toast-message"><span className="toast-dot"/>{toast}</div>}
+    {!live.demo && live.insight && <NoticedPanel insight={live.insight} onAvoid={avoidAttr} onConfirm={confirmRule} onReject={dropRule} onClose={live.dismissInsight}/>}
   </div>;
 }

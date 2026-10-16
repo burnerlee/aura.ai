@@ -9,6 +9,8 @@ from unittest.mock import MagicMock, patch
 from fastapi.testclient import TestClient
 
 from scraper.api.app import create_app
+from scraper.models.user import UserProfile
+from scraper.profile.service import EventOutcome
 from scraper.query.engine import RecommendationEngine
 from scraper.query.types import ScoredPost
 
@@ -51,7 +53,9 @@ def test_events_accept_like_mapping():
     store = MagicMock()
     engine = RecommendationEngine(store=store, vectors=MagicMock(), client=MagicMock())
     profiles = MagicMock()
-    profiles.record_event.return_value = MagicMock(persona_version=2)
+    profiles.record_event_outcome.return_value = EventOutcome(
+        profile=UserProfile(user_id="u1", persona_version=2)
+    )
     client = TestClient(create_app(engine=engine, profiles=profiles))
 
     res = client.post(
@@ -61,7 +65,10 @@ def test_events_accept_like_mapping():
     assert res.status_code == 200
     assert res.json()["ok"] is True
     assert res.json()["count"] == 1
-    profiles.record_event.assert_called_once()
+    assert res.json()["persona_version"] == 2
+    assert res.json()["noticed"] == [] and res.json()["proposals"] == []
+    assert res.json()["dna"]["version"] == 0
+    profiles.record_event_outcome.assert_called_once()
 
 
 def test_create_post_queues_embed():

@@ -78,6 +78,7 @@ class QdrantVectorStore:
             ("topics", models.PayloadSchemaType.KEYWORD),
             ("style", models.PayloadSchemaType.KEYWORD),
             ("emotion_primary", models.PayloadSchemaType.KEYWORD),
+            ("tag_ids", models.PayloadSchemaType.KEYWORD),
         ):
             self._client.create_payload_index(
                 collection_name=name,
@@ -119,6 +120,27 @@ class QdrantVectorStore:
             ],
         )
         return pid
+
+    def ensure_payload_index(
+        self,
+        field: str,
+        schema: models.PayloadSchemaType = models.PayloadSchemaType.KEYWORD,
+    ) -> None:
+        """Create a payload index on an existing collection (no-op if present)."""
+        self.ensure_collection()
+        self._client.create_payload_index(
+            collection_name=self.collection,
+            field_name=field,
+            field_schema=schema,
+        )
+
+    def set_payload(self, source: str, external_id: str, payload: dict[str, Any]) -> None:
+        """Merge ``payload`` keys into an existing point without touching vectors."""
+        self._client.set_payload(
+            collection_name=self.collection,
+            payload=payload,
+            points=[point_id_for(source, external_id)],
+        )
 
     def _build_filter(
         self,

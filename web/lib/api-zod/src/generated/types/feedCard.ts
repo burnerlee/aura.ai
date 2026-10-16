@@ -6,7 +6,9 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { CardAuthor } from './cardAuthor';
+import type { CardTag } from './cardTag';
 import type { FeedCardPerQueryScores } from './feedCardPerQueryScores';
+import type { MatchInfo } from './matchInfo';
 import type { PostKind } from './postKind';
 
 export interface FeedCard {
@@ -33,4 +35,8 @@ export interface FeedCard {
   score?: number | null;
   why?: string | null;
   per_query_scores?: FeedCardPerQueryScores;
+  /** Theme id behind `category`; the key into Interest DNA weights. */
+  category_tag_id?: string | null;
+  canonical_tags?: CardTag[];
+  match?: MatchInfo | null;
 }

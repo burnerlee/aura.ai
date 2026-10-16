@@ -16,14 +16,21 @@ from scraper.config import get_settings
 from scraper.connectors import list_connectors
 from scraper.discovery import discover_substack
 from scraper.discovery.substack import VALID_TIERS, BlogTarget
+from scraper.models.tag import TagKind
 from scraper.pipeline import run_scrape
 from scraper.storage.mongodb import MongoDocumentStore
+from scraper.storage.qdrant import QdrantVectorStore
+from scraper.tags.service import TagService
 
 app = typer.Typer(
     name="scraper",
     help="Multi-connector content scraper with embeddings and recommendations.",
     no_args_is_help=True,
 )
+tags_app = typer.Typer(
+    help="Canonical tag vocabulary built from post facets.", no_args_is_help=True
+)
+app.add_typer(tags_app, name="tags")
 console = Console()
 
 
@@ -318,6 +325,68 @@ def embed_status_cmd(
     with MongoDocumentStore() as store:
         stats = store.embedding_stats(source)
         console.print_json(json.dumps(stats))
+
+
+@tags_app.command("build")
+def tags_build_cmd(
+    threshold: float | None = typer.Option(
+        None,
+        "--threshold",
+        help="Cosine above which labels merge (default: TAG_CLUSTER_THRESHOLD).",
+    ),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Preview merges; write nothing."),
+    no_apply: bool = typer.Option(False, "--no-apply", help="Skip re-tagging posts."),
+) -> None:
+    """Cluster facet topics/styles into canonical tags, then tag every embedded post."""
+    with MongoDocumentStore() as store:
+        if not store.ping():
+            console.print("[red]MongoDB unreachable[/red]")
+            raise typer.Exit(1)
+        store.ensure_indexes()
+        vectors = QdrantVectorStore()
+        try:
+            summary = TagService(store=store, vectors=vectors).rebuild(
+                threshold=threshold, dry_run=dry_run, apply=not no_apply
+            )
+        finally:
+            vectors.close()
+    console.print_json(json.dumps(summary, default=str))
+
+
+@tags_app.command("apply")
+def tags_apply_cmd(
+    source: str | None = typer.Option(None, "--source", "-s"),
+    limit: int | None = typer.Option(None, "--limit", "-n"),
+) -> None:
+    """Re-resolve posts against the stored vocabulary (Mongo + Qdrant payload)."""
+    with MongoDocumentStore() as store:
+        if not store.ping():
+            console.print("[red]MongoDB unreachable[/red]")
+            raise typer.Exit(1)
+        store.ensure_indexes()
+        vectors = QdrantVectorStore()
+        try:
+            summary = TagService(store=store, vectors=vectors).apply(source=source, limit=limit)
+        finally:
+            vectors.close()
+    console.print_json(json.dumps(summary))
+
+
+@tags_app.command("list")
+def tags_list_cmd(
+    kind: TagKind | None = typer.Option(None, "--kind", "-k"),
+    limit: int = typer.Option(40, "--limit", "-n"),
+) -> None:
+    """Show the canonical vocabulary, most common first."""
+    with MongoDocumentStore() as store:
+        table = Table(title="Canonical tags")
+        table.add_column("id", style="cyan")
+        table.add_column("kind")
+        table.add_column("posts", justify="right")
+        table.add_column("aliases")
+        for tag in store.list_tags(kind=kind, min_docs=1, include_merged=False, limit=limit):
+            table.add_row(tag.id, tag.kind.value, str(tag.doc_count), ", ".join(tag.aliases[:5]))
+        console.print(table)
 
 
 @app.command("search")

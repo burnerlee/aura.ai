@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
 
@@ -15,14 +16,18 @@ from scraper.llm.factory import (
     get_indexing_client,
     get_inference_client,
 )
+from scraper.models.tag import TagKind
 from scraper.models.user import (
     AuraConversationMessage,
+    DNAPatch,
+    DNARule,
     EventType,
     FeedbackReason,
     Interaction,
+    InterestDNA,
+    NoticedAttr,
     UserProfile,
 )
-from scraper.profile.clusters import compute_centroids
 from scraper.profile.aura import (
     MAX_STORED_MESSAGES,
     AuraChatMessage,
@@ -31,6 +36,26 @@ from scraper.profile.aura import (
     chat_with_aura,
     draft_to_persona,
     merge_conversation_context,
+)
+from scraper.profile.clusters import compute_centroids
+from scraper.profile.dna import (
+    CUSTOM_PREFIX,
+    DNA_STEP,
+    adjust_weight,
+    apply_patch,
+    build_dna_from_draft,
+    confidence_scale,
+    humanize,
+    import_vector,
+    reconcile,
+    seed_dna,
+)
+from scraper.profile.patterns import (
+    build_snapshot,
+    merge_mined,
+    mine_rules,
+    noticed_for,
+    observations_from_interactions,
 )
 from scraper.profile.persona import onboard_persona, synthesize_persona
 from scraper.profile.state import update_state
@@ -41,11 +66,39 @@ from scraper.profile.weights import (
     is_explicit_negative,
 )
 from scraper.query.engine import RecommendationEngine
-from scraper.query.types import Filters, QueryKind, QuerySet, QueryVector, ScoredPost
+from scraper.query.types import (
+    Filters,
+    QueryKind,
+    QuerySet,
+    QueryVector,
+    RuleSet,
+    ScoredPost,
+)
 from scraper.storage.mongodb import MongoDocumentStore
 from scraper.storage.qdrant import QdrantVectorStore, point_id_for
+from scraper.tags.service import TagService
+from scraper.tags.vocabulary import TagResolver, slugify
 
 logger = logging.getLogger(__name__)
+
+# Explicit reactions that move the Interest DNA (not passive dwell / impressions).
+_DNA_EVENTS = frozenset(
+    {EventType.LIKE, EventType.SAVE, EventType.NOT_INTERESTED, EventType.PAIRWISE}
+)
+_MINING_WINDOW = 200  # most recent reactions considered when mining patterns
+_DNA_QUERY_THEMES = 4  # top DNA themes that also act as retrieval queries
+_DNA_QUERY_WEIGHT = 0.3  # their combined weight next to state / centroids / persona
+
+
+@dataclass
+class EventOutcome:
+    """Result of recording one event: the profile plus what the UI can say about it."""
+
+    profile: UserProfile
+    # Attributes of a just-skipped post, offered as one-tap "what I noticed" chips.
+    noticed: list[NoticedAttr] = field(default_factory=list)
+    # Newly mined anti rules the user should confirm or dismiss.
+    proposals: list[DNARule] = field(default_factory=list)
 
 
 class UserProfileService:
@@ -58,6 +111,7 @@ class UserProfileService:
         client: LLMClient | None = None,
         inference_client: LLMClient | None = None,
         indexing_client: LLMClient | None = None,
+        tag_service: TagService | None = None,
         settings: Settings | None = None,
     ) -> None:
         self.settings = settings or get_settings()
@@ -70,6 +124,12 @@ class UserProfileService:
             store=self.store,
             client=self._indexing,
             inference_client=self._inference,
+            settings=self.settings,
+        )
+        self.tags = tag_service or TagService(
+            store=self.store,
+            vectors=self.vectors,
+            client=self._indexing,
             settings=self.settings,
         )
 
@@ -94,6 +154,63 @@ class UserProfileService:
         profile = UserProfile(user_id=user_id)
         self.save(profile)
         return profile
+
+    def _resolver(self, *, embed: bool) -> TagResolver | None:
+        """Tag resolver, or None if the vocabulary is unavailable (never blocks DNA)."""
+        try:
+            return self.tags.resolver(embed=embed)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Tag vocabulary unavailable (%s); using custom DNA keys", exc)
+            return None
+
+    def ensure_dna(self, profile: UserProfile) -> UserProfile:
+        """Lazily migrate a pre-DNA profile, and heal keys after a tag rebuild."""
+        if profile.dna.version == 0:
+            seeded = seed_dna(profile, self._resolver(embed=True))
+            if seeded is not None:
+                profile.dna = seeded
+                self.save(profile)
+        elif profile.dna.weights:
+            healed, changed = reconcile(profile.dna, self._resolver(embed=False))
+            if changed:
+                profile.dna = healed
+                self.save(profile)
+        return profile
+
+    def get_dna(self, user_id: str) -> InterestDNA:
+        return self.ensure_dna(self.get_or_create(user_id)).dna
+
+    def patch_dna(self, user_id: str, patch: DNAPatch) -> InterestDNA:
+        """Manual DNA edit. Raises ``DNAVersionConflict`` on a stale ``base_version``."""
+        profile = self.ensure_dna(self.get_or_create(user_id))
+        profile.dna = apply_patch(profile.dna, patch, resolver=self._resolver(embed=False))
+        self.save(profile)
+        return profile.dna
+
+    def import_dna(
+        self,
+        user_id: str,
+        *,
+        vector: dict[str, float],
+        prompt: str,
+        excluded: list[str],
+    ) -> tuple[InterestDNA, bool]:
+        """Adopt the browser's local DNA once. Never overrides an existing server DNA."""
+        profile = self.ensure_dna(self.get_or_create(user_id))
+        if profile.dna.version > 0:
+            return profile.dna, False
+        imported = import_vector(
+            vector,
+            prompt=prompt,
+            excluded=excluded,
+            resolver=self._resolver(embed=True),
+            previous=profile.dna,
+        )
+        if imported is None:
+            return profile.dna, False
+        profile.dna = imported
+        self.save(profile)
+        return profile.dna, True
 
     def save(self, profile: UserProfile) -> None:
         profile.updated_at = datetime.now(UTC)
@@ -123,8 +240,67 @@ class UserProfileService:
         return raw
 
     def record_event(self, interaction: Interaction) -> UserProfile:
+        return self.record_event_outcome(interaction).profile
+
+    def _post_theme(self, meta: dict[str, Any]) -> tuple[str, str] | None:
+        """``(theme id, label)`` for a post: its tagged primary theme, else resolved."""
+        for ref in meta.get("canonical_tags") or []:
+            if isinstance(ref, dict) and ref.get("kind") == TagKind.THEME.value and ref.get("id"):
+                return str(ref["id"]), str(ref.get("label") or ref["id"])
+        facets = meta.get("facets") if isinstance(meta.get("facets"), dict) else {}
+        user_meta = meta.get("metadata") if isinstance(meta.get("metadata"), dict) else {}
+        labels = [
+            user_meta.get("category"),
+            *((facets or {}).get("topics") or []),
+            *(meta.get("categories") or []),
+        ]
+        labels = [str(label).strip() for label in labels if label and str(label).strip()]
+        resolver = self._resolver(embed=False)
+        for label in labels:
+            tag = resolver.resolve(label, TagKind.THEME) if resolver is not None else None
+            if tag is not None:
+                return tag.id, tag.label
+        if labels and (slug := slugify(labels[0])):
+            return f"{CUSTOM_PREFIX}{slug}", humanize(labels[0])
+        return None
+
+    def _learn_from_feedback(
+        self,
+        profile: UserProfile,
+        interaction: Interaction,
+        theme: tuple[str, str] | None,
+    ) -> tuple[list[NoticedAttr], list[DNARule]]:
+        """Move the DNA for this reaction, then re-mine post-level patterns."""
+        self.ensure_dna(profile)
+        weight = interaction.weight or 0.0
+        if theme is not None:
+            scale = confidence_scale(weight > 0, interaction.match_percent)
+            profile.dna = adjust_weight(
+                profile.dna, theme[0], theme[1], weight * DNA_STEP * scale
+            )
+
+        docs = (
+            self.store.interactions.find(
+                {"user_id": profile.user_id, "snapshot": {"$exists": True}}
+            )
+            .sort("ts", -1)
+            .limit(_MINING_WINDOW)
+        )
+        observations = observations_from_interactions(docs)
+        mined = mine_rules(observations, dismissed=profile.dna.dismissed)
+        profile.dna, proposals = merge_mined(profile.dna, mined)
+        noticed: list[NoticedAttr] = []
+        if weight < 0 and interaction.snapshot:
+            noticed = noticed_for(
+                interaction.snapshot, observations, dismissed=profile.dna.dismissed
+            )
+        return noticed, proposals
+
+    def record_event_outcome(self, interaction: Interaction) -> EventOutcome:
         profile = self.get_or_create(interaction.user_id)
         word_count = None
+        meta: dict[str, Any] = {}
+        theme: tuple[str, str] | None = None
         if interaction.post_id:
             meta = self._post_meta(interaction.post_id)
             word_count = meta.get("word_count")
@@ -143,6 +319,17 @@ class UserProfileService:
             weight = -0.3
         interaction.weight = weight
         interaction.weight_version = self.settings.weight_version
+        learns_dna = (
+            bool(interaction.post_id) and bool(meta) and interaction.event in _DNA_EVENTS
+        )
+        if learns_dna:
+            theme = self._post_theme(meta)
+            interaction.snapshot = build_snapshot(
+                meta,
+                theme=theme,
+                matched_label=interaction.matched_label,
+                match_percent=interaction.match_percent,
+            )
         self.store.interactions.insert_one(interaction.to_mongo())
 
         if interaction.post_id:
@@ -193,6 +380,11 @@ class UserProfileService:
             if interaction.post_id not in profile.negative_ids:
                 profile.negative_ids.append(interaction.post_id)
 
+        noticed: list[NoticedAttr] = []
+        proposals: list[DNARule] = []
+        if learns_dna and weight != 0:
+            noticed, proposals = self._learn_from_feedback(profile, interaction, theme)
+
         # Persona refresh triggers
         refresh = False
         if interaction.event == EventType.TUNE:
@@ -208,7 +400,7 @@ class UserProfileService:
         self.save(profile)
         if refresh:
             profile = self.refresh_persona(profile.user_id)
-        return profile
+        return EventOutcome(profile=profile, noticed=noticed, proposals=proposals)
 
     def refresh_persona(self, user_id: str) -> UserProfile:
         profile = self.get_or_create(user_id)
@@ -299,6 +491,8 @@ class UserProfileService:
         """One conversational turn with Aura; optionally persist a ready profile."""
         profile = self.get_or_create(user_id)
         prior = self._stored_aura_messages(profile)
+        if not known_themes:
+            known_themes = self._vocabulary_themes()
 
         if apply and profile_draft is not None:
             turn = AuraTurn(
@@ -339,12 +533,19 @@ class UserProfileService:
             profile = self.apply_aura_profile(user_id, turn.profile)
         return turn, profile
 
+    def _vocabulary_themes(self) -> list[str]:
+        try:
+            return self.tags.top_labels()
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Could not load tag vocabulary for Aura (%s)", exc)
+            return []
+
     def apply_aura_profile(
         self,
         user_id: str,
         draft: AuraProfileDraft,
     ) -> UserProfile:
-        """Persist Aura's drafted profile as persona + embedding."""
+        """Persist Aura's drafted profile as persona + embedding + Interest DNA."""
         profile = self.get_or_create(user_id)
         persona = draft_to_persona(draft)
         # Merge mutes from any prior persona.
@@ -361,6 +562,9 @@ class UserProfileService:
         profile.persona_vector = vector
         profile.persona_version += 1
         profile.interaction_count_since_persona = 0
+        profile.dna = build_dna_from_draft(
+            draft, self._resolver(embed=True), previous=profile.dna
+        )
         self.save(profile)
         return profile
 
@@ -421,6 +625,7 @@ class UserProfileService:
                     label="persona",
                 )
             )
+        vectors.extend(self._dna_query_vectors(profile))
         # Cold start: embed persona summary topics as content query
         if not vectors and profile.persona.summary:
             vec = self.client.embed_query(profile.persona.summary)
@@ -428,6 +633,35 @@ class UserProfileService:
                 QueryVector(vector=vec, weight=1.0, kind=QueryKind.PERSONA, label="persona")
             )
         return QuerySet(vectors=vectors)
+
+    def _dna_query_vectors(self, profile: UserProfile) -> list[QueryVector]:
+        """The user's top Interest DNA themes as retrieval queries.
+
+        This is what makes the DNA the user sees the DNA that ranks: each top theme
+        contributes its centroid, weighted by its share. Custom themes (no corpus
+        theme yet) have no vector and are skipped.
+        """
+        if not profile.dna.weights:
+            return []
+        resolver = self._resolver(embed=False)
+        if resolver is None:
+            return []
+        top = sorted(profile.dna.weights.items(), key=lambda kv: -kv[1])[:_DNA_QUERY_THEMES]
+        total = sum(weight for _, weight in top) or 1.0
+        out: list[QueryVector] = []
+        for key, weight in top:
+            tag = resolver.by_id(key)
+            if tag is None or not tag.embedding:
+                continue
+            out.append(
+                QueryVector(
+                    vector=tag.embedding,
+                    weight=_DNA_QUERY_WEIGHT * weight / total,
+                    kind=QueryKind.THEME,
+                    label=tag.label,
+                )
+            )
+        return out
 
     def negative_set(self, profile: UserProfile) -> list[list[float]]:
         out: list[list[float]] = []
@@ -444,7 +678,7 @@ class UserProfileService:
         k: int = 10,
         explain: bool = False,
     ) -> list[ScoredPost]:
-        profile = self.get_or_create(user_id)
+        profile = self.ensure_dna(self.get_or_create(user_id))
         query_set = self.build_query_set(profile)
         if not query_set.vectors:
             return []
@@ -475,6 +709,7 @@ class UserProfileService:
             k=k,
             exclude_ids=exclude_points,
             negative_set=self.negative_set(profile),
+            rules=RuleSet(anti=profile.dna.anti, affinities=profile.dna.affinities),
             explain=explain,
             persona_text=profile.persona.summary,
         )

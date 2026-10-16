@@ -36,10 +36,81 @@ export interface Author {
   verified?: boolean;
 }
 
+/** A canonical tag attached to a post (theme / topic / style). */
+export interface PostTag {
+  id: string;
+  label: string;
+  kind: "topic" | "style" | "theme";
+}
+
+export interface MatchFlag {
+  kind: "aversion" | "affinity";
+  label: string;
+  ruleKey: string;
+}
+
+/**
+ * Server-computed match. `percent` is relative: the post's percentile among everything
+ * scored for this request (not the shown list). `null` means the pool was too small.
+ */
+export interface PostMatch {
+  percent: number | null;
+  fit: number;
+  poolSize: number;
+  reliable: boolean;
+  components: Record<string, number>;
+  topAttribution?: string;
+  flags: MatchFlag[];
+}
+
+export type ServerDnaRuleKind =
+  | "topic"
+  | "style"
+  | "emotion"
+  | "author"
+  | "source"
+  | "length"
+  | "reading_level";
+
+/** A pattern the user avoids (anti) or leans toward (affinity). */
+export interface ServerDnaRule {
+  kind: ServerDnaRuleKind;
+  key: string;
+  label?: string | null;
+  strength?: number;
+  source?: "chat" | "learned" | "confirmed";
+  evidence_ids?: string[];
+}
+
+/** Interest DNA as the server owns it: weights keyed by theme id, summing to ~100. */
+export interface ServerDna {
+  weights: Record<string, number>;
+  labels: Record<string, string>;
+  anti: ServerDnaRule[];
+  affinities: ServerDnaRule[];
+  prompt: string;
+  version: number;
+}
+
+/** Attribute of a just-skipped post, offered back as a one-tap chip. */
+export interface ServerNoticed {
+  kind: ServerDnaRuleKind;
+  key: string;
+  label: string;
+  seen: number;
+  negative: number;
+}
+
 export interface FeedPost {
   id: string;
   kind: PostKind;
   category: InterestCategoryId;
+  /** Theme id behind `category` (the key into the server's Interest DNA). */
+  categoryTagId?: string;
+  /** Canonical topic / style tags generated from the content dataset. */
+  canonicalTags?: PostTag[];
+  /** Relative match from the server; absent in demo mode. */
+  match?: PostMatch;
   author: Author;
   publishedAt: string;
   title?: string;

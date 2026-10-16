@@ -29,6 +29,10 @@ class EventIn(BaseModel):
     read_ratio: float | None = None
     text: str | None = None
     pair_post_id: str | None = None
+    # What the card showed when the user reacted, so feedback can be weighted by how
+    # confident the match was and the culprit (what pulled the post in) can be recorded.
+    match_percent: float | None = None
+    matched_label: str | None = None
 
 
 class EventsRequest(BaseModel):
@@ -64,3 +68,11 @@ class AuraChatRequest(BaseModel):
     known_themes: list[str] = Field(default_factory=list)
     apply: bool = False  # when true, persist persona from profile or ready turn
     profile: AuraProfileDraftIn | None = None
+
+
+class DNAImportRequest(BaseModel):
+    """The Interest DNA a browser kept in localStorage before it moved server-side."""
+
+    vector: dict[str, float] = Field(default_factory=dict)
+    prompt: str = ""
+    excluded_categories: list[str] = Field(default_factory=list)

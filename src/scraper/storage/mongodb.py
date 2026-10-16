@@ -11,12 +11,13 @@ from typing import Any
 
 from bson import ObjectId
 from bson.errors import InvalidId
-from pymongo import ASCENDING, DESCENDING, MongoClient, UpdateOne
+from pymongo import ASCENDING, DESCENDING, MongoClient, ReplaceOne, UpdateOne
 from pymongo.collection import Collection
 from pymongo.errors import ConnectionFailure
 
 from scraper.config import Settings, get_settings
 from scraper.models.document import ContentDocument, EmbeddingStatus
+from scraper.models.tag import Tag, TagKind
 
 logger = logging.getLogger(__name__)
 
@@ -56,6 +57,10 @@ class MongoDocumentStore:
             self.settings.mongo_interactions_collection
         ]
 
+    @property
+    def tags(self) -> Collection:
+        return self.client[self.settings.mongo_db][self.settings.mongo_tags_collection]
+
     def ping(self) -> bool:
         try:
             self.client.admin.command("ping")
@@ -83,6 +88,12 @@ class MongoDocumentStore:
         coll.create_index([("metadata.subdomain", ASCENDING)], name="subdomain")
         coll.create_index([("metadata.type", ASCENDING)], name="metadata_type")
         coll.create_index([("content_hash", ASCENDING)], name="content_hash")
+        coll.create_index([("tag_ids", ASCENDING)], name="tag_ids")
+
+        self.tags.create_index(
+            [("kind", ASCENDING), ("doc_count", DESCENDING)],
+            name="tag_kind_doc_count",
+        )
 
         self.users.create_index([("user_id", ASCENDING)], unique=True, name="uniq_user_id")
         self.interactions.create_index(
@@ -270,6 +281,7 @@ class MongoDocumentStore:
         content_hash: str,
         chunk_count: int,
         facets: dict[str, Any] | None = None,
+        canonical_tags: list[dict[str, Any]] | None = None,
     ) -> None:
         payload: dict[str, Any] = {
             "embedding_status": EmbeddingStatus.READY.value,
@@ -281,6 +293,9 @@ class MongoDocumentStore:
         }
         if facets is not None:
             payload["facets"] = facets
+        if canonical_tags is not None:
+            payload["canonical_tags"] = canonical_tags
+            payload["tag_ids"] = [t["id"] for t in canonical_tags]
         self.collection.update_one(
             {"source": source, "external_id": external_id},
             {"$set": payload, "$unset": {"embedding_error": ""}},
@@ -329,6 +344,106 @@ class MongoDocumentStore:
         counts = {row["_id"] or "missing": row["n"] for row in self.collection.aggregate(pipeline)}
         counts["total"] = sum(v for k, v in counts.items() if k != "total")
         return counts
+
+    # --- canonical tag vocabulary -------------------------------------------------
+
+    def facet_label_counts(self, field: str) -> dict[str, int]:
+        """Raw ``facets.<field>`` label -> occurrence count across embedded posts."""
+        path = f"facets.{field}"
+        pipeline: list[dict[str, Any]] = [
+            {"$match": {"embedding_status": EmbeddingStatus.READY.value, path: {"$exists": True}}},
+            {"$unwind": f"${path}"},
+            {"$group": {"_id": f"${path}", "n": {"$sum": 1}}},
+        ]
+        return {
+            row["_id"]: int(row["n"])
+            for row in self.collection.aggregate(pipeline)
+            if isinstance(row["_id"], str)
+        }
+
+    def list_tags(
+        self,
+        *,
+        kind: TagKind | None = None,
+        min_docs: int = 0,
+        include_merged: bool = True,
+        limit: int | None = None,
+    ) -> list[Tag]:
+        filt: dict[str, Any] = {}
+        if kind is not None:
+            filt["kind"] = kind.value
+        if min_docs > 0:
+            filt["doc_count"] = {"$gte": min_docs}
+        if not include_merged:
+            filt["merged_into"] = None
+        cursor = self.tags.find(filt).sort(
+            [("doc_count", DESCENDING), ("label", ASCENDING)]
+        )
+        if limit is not None:
+            cursor = cursor.limit(limit)
+        return [Tag.from_mongo(doc) for doc in cursor]
+
+    def save_tags(self, tags: list[Tag]) -> int:
+        """Upsert tags by id (full replace)."""
+        if not tags:
+            return 0
+        ops = [ReplaceOne({"_id": t.id}, t.to_mongo(), upsert=True) for t in tags]
+        self.tags.bulk_write(ops, ordered=False)
+        return len(ops)
+
+    def set_tag_doc_counts(self, counts: dict[str, int]) -> None:
+        """Set ``doc_count`` for every tag: given counts, zero for the rest."""
+        self.tags.update_many(
+            {"_id": {"$nin": list(counts)}}, {"$set": {"doc_count": 0}}
+        )
+        if counts:
+            self.tags.bulk_write(
+                [UpdateOne({"_id": tid}, {"$set": {"doc_count": n}}) for tid, n in counts.items()],
+                ordered=False,
+            )
+
+    def tag_doc_counts(self) -> dict[str, int]:
+        """Number of embedded posts carrying each ``tag_ids`` entry."""
+        pipeline: list[dict[str, Any]] = [
+            {"$match": {"tag_ids": {"$exists": True}}},
+            {"$unwind": "$tag_ids"},
+            {"$group": {"_id": "$tag_ids", "n": {"$sum": 1}}},
+        ]
+        return {row["_id"]: int(row["n"]) for row in self.collection.aggregate(pipeline)}
+
+    def iter_for_tagging(
+        self,
+        *,
+        source: str | None = None,
+        limit: int | None = None,
+    ) -> Iterator[dict[str, Any]]:
+        """Embedded posts that have facets (the input to tag resolution)."""
+        filt: dict[str, Any] = {
+            "embedding_status": EmbeddingStatus.READY.value,
+            "facets": {"$exists": True},
+        }
+        if source:
+            filt["source"] = source
+        cursor = self.collection.find(
+            filt, {"source": 1, "external_id": 1, "facets": 1}
+        ).sort([("scraped_at", DESCENDING)])
+        if limit is not None:
+            cursor = cursor.limit(limit)
+        yield from cursor
+
+    def set_post_tags(self, updates: list[tuple[Any, list[dict[str, Any]]]]) -> int:
+        """Write ``canonical_tags`` / ``tag_ids`` for ``(post _id, tag refs)`` pairs."""
+        if not updates:
+            return 0
+        ops = [
+            UpdateOne(
+                {"_id": post_id},
+                {"$set": {"canonical_tags": refs, "tag_ids": [r["id"] for r in refs]}},
+            )
+            for post_id, refs in updates
+        ]
+        result = self.collection.bulk_write(ops, ordered=False)
+        return result.matched_count
 
     def close(self) -> None:
         if self._client is not None:

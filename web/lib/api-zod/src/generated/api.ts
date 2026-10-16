@@ -58,7 +58,26 @@ export const SearchPostsResponseItem = zod.object({
   "embedding_error": zod.string().nullish(),
   "score": zod.number().nullish(),
   "why": zod.string().nullish(),
-  "per_query_scores": zod.record(zod.string(), zod.number()).optional()
+  "per_query_scores": zod.record(zod.string(), zod.number()).optional(),
+  "category_tag_id": zod.string().nullish().describe('Theme id behind `category`; the key into Interest DNA weights.'),
+  "canonical_tags": zod.array(zod.object({
+  "id": zod.string(),
+  "label": zod.string(),
+  "kind": zod.enum(['topic', 'style', 'theme'])
+})).optional(),
+  "match": zod.object({
+  "percent": zod.number().int().nullish().describe('Null when the scored pool is too small to rank against.'),
+  "fit": zod.number(),
+  "pool_size": zod.number().int(),
+  "reliable": zod.boolean(),
+  "components": zod.record(zod.string(), zod.number()),
+  "top_attribution": zod.string().nullish(),
+  "flags": zod.array(zod.object({
+  "kind": zod.enum(['aversion', 'affinity']),
+  "label": zod.string(),
+  "rule_key": zod.string()
+}))
+}).describe('percent is relative: the post\'s percentile among every candidate scored for\nthis request (not the shown list). fit is the absolute value behind it.\n').nullish()
 })
 export const SearchPostsResponse = zod.array(SearchPostsResponseItem)
 
@@ -106,7 +125,26 @@ export const DiscoverPostsResponseItem = zod.object({
   "embedding_error": zod.string().nullish(),
   "score": zod.number().nullish(),
   "why": zod.string().nullish(),
-  "per_query_scores": zod.record(zod.string(), zod.number()).optional()
+  "per_query_scores": zod.record(zod.string(), zod.number()).optional(),
+  "category_tag_id": zod.string().nullish().describe('Theme id behind `category`; the key into Interest DNA weights.'),
+  "canonical_tags": zod.array(zod.object({
+  "id": zod.string(),
+  "label": zod.string(),
+  "kind": zod.enum(['topic', 'style', 'theme'])
+})).optional(),
+  "match": zod.object({
+  "percent": zod.number().int().nullish().describe('Null when the scored pool is too small to rank against.'),
+  "fit": zod.number(),
+  "pool_size": zod.number().int(),
+  "reliable": zod.boolean(),
+  "components": zod.record(zod.string(), zod.number()),
+  "top_attribution": zod.string().nullish(),
+  "flags": zod.array(zod.object({
+  "kind": zod.enum(['aversion', 'affinity']),
+  "label": zod.string(),
+  "rule_key": zod.string()
+}))
+}).describe('percent is relative: the post\'s percentile among every candidate scored for\nthis request (not the shown list). fit is the absolute value behind it.\n').nullish()
 })
 export const DiscoverPostsResponse = zod.array(DiscoverPostsResponseItem)
 
@@ -146,7 +184,26 @@ export const ListPostsResponseItem = zod.object({
   "embedding_error": zod.string().nullish(),
   "score": zod.number().nullish(),
   "why": zod.string().nullish(),
-  "per_query_scores": zod.record(zod.string(), zod.number()).optional()
+  "per_query_scores": zod.record(zod.string(), zod.number()).optional(),
+  "category_tag_id": zod.string().nullish().describe('Theme id behind `category`; the key into Interest DNA weights.'),
+  "canonical_tags": zod.array(zod.object({
+  "id": zod.string(),
+  "label": zod.string(),
+  "kind": zod.enum(['topic', 'style', 'theme'])
+})).optional(),
+  "match": zod.object({
+  "percent": zod.number().int().nullish().describe('Null when the scored pool is too small to rank against.'),
+  "fit": zod.number(),
+  "pool_size": zod.number().int(),
+  "reliable": zod.boolean(),
+  "components": zod.record(zod.string(), zod.number()),
+  "top_attribution": zod.string().nullish(),
+  "flags": zod.array(zod.object({
+  "kind": zod.enum(['aversion', 'affinity']),
+  "label": zod.string(),
+  "rule_key": zod.string()
+}))
+}).describe('percent is relative: the post\'s percentile among every candidate scored for\nthis request (not the shown list). fit is the absolute value behind it.\n').nullish()
 })
 export const ListPostsResponse = zod.array(ListPostsResponseItem)
 
@@ -202,7 +259,26 @@ export const CreatePostResponse = zod.object({
   "embedding_error": zod.string().nullish(),
   "score": zod.number().nullish(),
   "why": zod.string().nullish(),
-  "per_query_scores": zod.record(zod.string(), zod.number()).optional()
+  "per_query_scores": zod.record(zod.string(), zod.number()).optional(),
+  "category_tag_id": zod.string().nullish().describe('Theme id behind `category`; the key into Interest DNA weights.'),
+  "canonical_tags": zod.array(zod.object({
+  "id": zod.string(),
+  "label": zod.string(),
+  "kind": zod.enum(['topic', 'style', 'theme'])
+})).optional(),
+  "match": zod.object({
+  "percent": zod.number().int().nullish().describe('Null when the scored pool is too small to rank against.'),
+  "fit": zod.number(),
+  "pool_size": zod.number().int(),
+  "reliable": zod.boolean(),
+  "components": zod.record(zod.string(), zod.number()),
+  "top_attribution": zod.string().nullish(),
+  "flags": zod.array(zod.object({
+  "kind": zod.enum(['aversion', 'affinity']),
+  "label": zod.string(),
+  "rule_key": zod.string()
+}))
+}).describe('percent is relative: the post\'s percentile among every candidate scored for\nthis request (not the shown list). fit is the absolute value behind it.\n').nullish()
 }),
   "embedding_summary": zod.record(zod.string(), zod.unknown()).nullish()
 })
@@ -243,7 +319,26 @@ export const GetPostResponse = zod.object({
   "embedding_error": zod.string().nullish(),
   "score": zod.number().nullish(),
   "why": zod.string().nullish(),
-  "per_query_scores": zod.record(zod.string(), zod.number()).optional()
+  "per_query_scores": zod.record(zod.string(), zod.number()).optional(),
+  "category_tag_id": zod.string().nullish().describe('Theme id behind `category`; the key into Interest DNA weights.'),
+  "canonical_tags": zod.array(zod.object({
+  "id": zod.string(),
+  "label": zod.string(),
+  "kind": zod.enum(['topic', 'style', 'theme'])
+})).optional(),
+  "match": zod.object({
+  "percent": zod.number().int().nullish().describe('Null when the scored pool is too small to rank against.'),
+  "fit": zod.number(),
+  "pool_size": zod.number().int(),
+  "reliable": zod.boolean(),
+  "components": zod.record(zod.string(), zod.number()),
+  "top_attribution": zod.string().nullish(),
+  "flags": zod.array(zod.object({
+  "kind": zod.enum(['aversion', 'affinity']),
+  "label": zod.string(),
+  "rule_key": zod.string()
+}))
+}).describe('percent is relative: the post\'s percentile among every candidate scored for\nthis request (not the shown list). fit is the absolute value behind it.\n').nullish()
 })
 
 
@@ -291,7 +386,26 @@ export const SimilarPostsResponseItem = zod.object({
   "embedding_error": zod.string().nullish(),
   "score": zod.number().nullish(),
   "why": zod.string().nullish(),
-  "per_query_scores": zod.record(zod.string(), zod.number()).optional()
+  "per_query_scores": zod.record(zod.string(), zod.number()).optional(),
+  "category_tag_id": zod.string().nullish().describe('Theme id behind `category`; the key into Interest DNA weights.'),
+  "canonical_tags": zod.array(zod.object({
+  "id": zod.string(),
+  "label": zod.string(),
+  "kind": zod.enum(['topic', 'style', 'theme'])
+})).optional(),
+  "match": zod.object({
+  "percent": zod.number().int().nullish().describe('Null when the scored pool is too small to rank against.'),
+  "fit": zod.number(),
+  "pool_size": zod.number().int(),
+  "reliable": zod.boolean(),
+  "components": zod.record(zod.string(), zod.number()),
+  "top_attribution": zod.string().nullish(),
+  "flags": zod.array(zod.object({
+  "kind": zod.enum(['aversion', 'affinity']),
+  "label": zod.string(),
+  "rule_key": zod.string()
+}))
+}).describe('percent is relative: the post\'s percentile among every candidate scored for\nthis request (not the shown list). fit is the absolute value behind it.\n').nullish()
 })
 export const SimilarPostsResponse = zod.array(SimilarPostsResponseItem)
 
@@ -357,7 +471,26 @@ export const GetUserFeedResponseItem = zod.object({
   "embedding_error": zod.string().nullish(),
   "score": zod.number().nullish(),
   "why": zod.string().nullish(),
-  "per_query_scores": zod.record(zod.string(), zod.number()).optional()
+  "per_query_scores": zod.record(zod.string(), zod.number()).optional(),
+  "category_tag_id": zod.string().nullish().describe('Theme id behind `category`; the key into Interest DNA weights.'),
+  "canonical_tags": zod.array(zod.object({
+  "id": zod.string(),
+  "label": zod.string(),
+  "kind": zod.enum(['topic', 'style', 'theme'])
+})).optional(),
+  "match": zod.object({
+  "percent": zod.number().int().nullish().describe('Null when the scored pool is too small to rank against.'),
+  "fit": zod.number(),
+  "pool_size": zod.number().int(),
+  "reliable": zod.boolean(),
+  "components": zod.record(zod.string(), zod.number()),
+  "top_attribution": zod.string().nullish(),
+  "flags": zod.array(zod.object({
+  "kind": zod.enum(['aversion', 'affinity']),
+  "label": zod.string(),
+  "rule_key": zod.string()
+}))
+}).describe('percent is relative: the post\'s percentile among every candidate scored for\nthis request (not the shown list). fit is the absolute value behind it.\n').nullish()
 })
 export const GetUserFeedResponse = zod.array(GetUserFeedResponseItem)
 
@@ -397,7 +530,26 @@ export const GetUserPairResponseItem = zod.object({
   "embedding_error": zod.string().nullish(),
   "score": zod.number().nullish(),
   "why": zod.string().nullish(),
-  "per_query_scores": zod.record(zod.string(), zod.number()).optional()
+  "per_query_scores": zod.record(zod.string(), zod.number()).optional(),
+  "category_tag_id": zod.string().nullish().describe('Theme id behind `category`; the key into Interest DNA weights.'),
+  "canonical_tags": zod.array(zod.object({
+  "id": zod.string(),
+  "label": zod.string(),
+  "kind": zod.enum(['topic', 'style', 'theme'])
+})).optional(),
+  "match": zod.object({
+  "percent": zod.number().int().nullish().describe('Null when the scored pool is too small to rank against.'),
+  "fit": zod.number(),
+  "pool_size": zod.number().int(),
+  "reliable": zod.boolean(),
+  "components": zod.record(zod.string(), zod.number()),
+  "top_attribution": zod.string().nullish(),
+  "flags": zod.array(zod.object({
+  "kind": zod.enum(['aversion', 'affinity']),
+  "label": zod.string(),
+  "rule_key": zod.string()
+}))
+}).describe('percent is relative: the post\'s percentile among every candidate scored for\nthis request (not the shown list). fit is the absolute value behind it.\n').nullish()
 })
 export const GetUserPairResponse = zod.array(GetUserPairResponseItem)
 
@@ -424,14 +576,55 @@ export const PostUserEventsBody = zod.object({
   "completed": zod.boolean().nullish(),
   "read_ratio": zod.number().nullish(),
   "text": zod.string().nullish(),
-  "pair_post_id": zod.string().nullish()
+  "pair_post_id": zod.string().nullish(),
+  "match_percent": zod.number().nullish().describe('Match percent the card showed; weights how much the feedback counts.'),
+  "matched_label": zod.string().nullish().describe('Top attribution on the card (what pulled the post in).')
 }))
 })
 
 export const PostUserEventsResponse = zod.object({
   "ok": zod.boolean(),
   "count": zod.number().int(),
-  "persona_version": zod.number().int().nullish()
+  "persona_version": zod.number().int().nullish(),
+  "dna": zod.object({
+  "weights": zod.record(zod.string(), zod.number()).describe('Theme id -> share (sums to ~100). `custom:` keys have no corpus theme yet.'),
+  "labels": zod.record(zod.string(), zod.string()),
+  "anti": zod.array(zod.object({
+  "kind": zod.enum(['topic', 'style', 'emotion', 'author', 'source', 'length', 'reading_level']),
+  "key": zod.string(),
+  "label": zod.string().nullish(),
+  "strength": zod.number().optional(),
+  "source": zod.enum(['chat', 'learned', 'confirmed']).optional(),
+  "evidence_ids": zod.array(zod.string()).optional()
+})),
+  "affinities": zod.array(zod.object({
+  "kind": zod.enum(['topic', 'style', 'emotion', 'author', 'source', 'length', 'reading_level']),
+  "key": zod.string(),
+  "label": zod.string().nullish(),
+  "strength": zod.number().optional(),
+  "source": zod.enum(['chat', 'learned', 'confirmed']).optional(),
+  "evidence_ids": zod.array(zod.string()).optional()
+})),
+  "prompt": zod.string(),
+  "dismissed": zod.array(zod.string()).optional(),
+  "version": zod.number().int(),
+  "updated_at": zod.string().optional()
+}).nullish(),
+  "noticed": zod.array(zod.object({
+  "kind": zod.enum(['topic', 'style', 'emotion', 'author', 'source', 'length', 'reading_level']),
+  "key": zod.string(),
+  "label": zod.string(),
+  "seen": zod.number().int(),
+  "negative": zod.number().int()
+})).optional().describe('Attributes of a just-skipped post, offered as one-tap chips.'),
+  "proposals": zod.array(zod.object({
+  "kind": zod.enum(['topic', 'style', 'emotion', 'author', 'source', 'length', 'reading_level']),
+  "key": zod.string(),
+  "label": zod.string().nullish(),
+  "strength": zod.number().optional(),
+  "source": zod.enum(['chat', 'learned', 'confirmed']).optional(),
+  "evidence_ids": zod.array(zod.string()).optional()
+})).optional().describe('Newly mined avoidances awaiting confirm / dismiss.')
 })
 
 
@@ -585,7 +778,186 @@ export const ChatWithAuraResponse = zod.object({
   "agreeableness": zod.number().optional()
 }).optional()
 }).nullish(),
-  "persona_version": zod.number().int().nullish()
+  "persona_version": zod.number().int().nullish(),
+  "dna": zod.object({
+  "weights": zod.record(zod.string(), zod.number()).describe('Theme id -> share (sums to ~100). `custom:` keys have no corpus theme yet.'),
+  "labels": zod.record(zod.string(), zod.string()),
+  "anti": zod.array(zod.object({
+  "kind": zod.enum(['topic', 'style', 'emotion', 'author', 'source', 'length', 'reading_level']),
+  "key": zod.string(),
+  "label": zod.string().nullish(),
+  "strength": zod.number().optional(),
+  "source": zod.enum(['chat', 'learned', 'confirmed']).optional(),
+  "evidence_ids": zod.array(zod.string()).optional()
+})),
+  "affinities": zod.array(zod.object({
+  "kind": zod.enum(['topic', 'style', 'emotion', 'author', 'source', 'length', 'reading_level']),
+  "key": zod.string(),
+  "label": zod.string().nullish(),
+  "strength": zod.number().optional(),
+  "source": zod.enum(['chat', 'learned', 'confirmed']).optional(),
+  "evidence_ids": zod.array(zod.string()).optional()
+})),
+  "prompt": zod.string(),
+  "dismissed": zod.array(zod.string()).optional(),
+  "version": zod.number().int(),
+  "updated_at": zod.string().optional()
+}).nullish()
+})
+
+
+/**
+ * @summary Canonical tag vocabulary (themes, topics, styles)
+ */
+export const listTagsQueryLimitDefault = 100;
+export const listTagsQueryLimitMax = 500;
+
+export const listTagsQueryMinDocsDefault = 1;
+export const listTagsQueryMinDocsMin = 0;
+
+
+
+export const ListTagsQueryParams = zod.object({
+  "kind": zod.enum(['topic', 'style', 'theme']).optional(),
+  "limit": zod.coerce.number().int().min(1).max(listTagsQueryLimitMax).default(listTagsQueryLimitDefault),
+  "min_docs": zod.coerce.number().int().min(listTagsQueryMinDocsMin).default(listTagsQueryMinDocsDefault)
+})
+
+export const ListTagsResponseItem = zod.object({
+  "id": zod.string(),
+  "kind": zod.enum(['topic', 'style', 'theme']),
+  "label": zod.string(),
+  "aliases": zod.array(zod.string()).optional(),
+  "doc_count": zod.number().int(),
+  "parent_id": zod.string().nullish()
+})
+export const ListTagsResponse = zod.array(ListTagsResponseItem)
+
+
+/**
+ * Weights are keyed by theme id and sum to ~100. A profile that predates DNA is
+ * seeded from its persona on first read; a brand-new user has version 0.
+ * @summary Server-owned Interest DNA
+ */
+export const GetUserDnaParams = zod.object({
+  "userId": zod.coerce.string().describe('Client-owned anonymous or auth user id')
+})
+
+export const GetUserDnaResponse = zod.object({
+  "weights": zod.record(zod.string(), zod.number()).describe('Theme id -> share (sums to ~100). `custom:` keys have no corpus theme yet.'),
+  "labels": zod.record(zod.string(), zod.string()),
+  "anti": zod.array(zod.object({
+  "kind": zod.enum(['topic', 'style', 'emotion', 'author', 'source', 'length', 'reading_level']),
+  "key": zod.string(),
+  "label": zod.string().nullish(),
+  "strength": zod.number().optional(),
+  "source": zod.enum(['chat', 'learned', 'confirmed']).optional(),
+  "evidence_ids": zod.array(zod.string()).optional()
+})),
+  "affinities": zod.array(zod.object({
+  "kind": zod.enum(['topic', 'style', 'emotion', 'author', 'source', 'length', 'reading_level']),
+  "key": zod.string(),
+  "label": zod.string().nullish(),
+  "strength": zod.number().optional(),
+  "source": zod.enum(['chat', 'learned', 'confirmed']).optional(),
+  "evidence_ids": zod.array(zod.string()).optional()
+})),
+  "prompt": zod.string(),
+  "dismissed": zod.array(zod.string()).optional(),
+  "version": zod.number().int(),
+  "updated_at": zod.string().optional()
+})
+
+
+/**
+ * @summary Edit Interest DNA (drag a slice, confirm or remove a rule)
+ */
+export const PatchUserDnaParams = zod.object({
+  "userId": zod.coerce.string().describe('Client-owned anonymous or auth user id')
+})
+
+export const PatchUserDnaBody = zod.object({
+  "base_version": zod.number().int(),
+  "set_weights": zod.record(zod.string(), zod.number()).optional().describe('Theme id -> target percent; every other theme rescales.'),
+  "remove_weights": zod.array(zod.string()).optional(),
+  "add_anti": zod.array(zod.object({
+  "kind": zod.enum(['topic', 'style', 'emotion', 'author', 'source', 'length', 'reading_level']),
+  "key": zod.string(),
+  "label": zod.string().nullish(),
+  "strength": zod.number().optional(),
+  "source": zod.enum(['chat', 'learned', 'confirmed']).optional(),
+  "evidence_ids": zod.array(zod.string()).optional()
+})).optional(),
+  "remove_anti": zod.array(zod.string()).optional(),
+  "prompt": zod.string().nullish()
+})
+
+export const PatchUserDnaResponse = zod.object({
+  "weights": zod.record(zod.string(), zod.number()).describe('Theme id -> share (sums to ~100). `custom:` keys have no corpus theme yet.'),
+  "labels": zod.record(zod.string(), zod.string()),
+  "anti": zod.array(zod.object({
+  "kind": zod.enum(['topic', 'style', 'emotion', 'author', 'source', 'length', 'reading_level']),
+  "key": zod.string(),
+  "label": zod.string().nullish(),
+  "strength": zod.number().optional(),
+  "source": zod.enum(['chat', 'learned', 'confirmed']).optional(),
+  "evidence_ids": zod.array(zod.string()).optional()
+})),
+  "affinities": zod.array(zod.object({
+  "kind": zod.enum(['topic', 'style', 'emotion', 'author', 'source', 'length', 'reading_level']),
+  "key": zod.string(),
+  "label": zod.string().nullish(),
+  "strength": zod.number().optional(),
+  "source": zod.enum(['chat', 'learned', 'confirmed']).optional(),
+  "evidence_ids": zod.array(zod.string()).optional()
+})),
+  "prompt": zod.string(),
+  "dismissed": zod.array(zod.string()).optional(),
+  "version": zod.number().int(),
+  "updated_at": zod.string().optional()
+})
+
+
+/**
+ * Never overrides an existing server DNA (imported=false).
+ * @summary One-time adoption of a browser-local Interest DNA
+ */
+export const ImportUserDnaParams = zod.object({
+  "userId": zod.coerce.string().describe('Client-owned anonymous or auth user id')
+})
+
+export const ImportUserDnaBody = zod.object({
+  "vector": zod.record(zod.string(), zod.number()).optional(),
+  "prompt": zod.string().optional(),
+  "excluded_categories": zod.array(zod.string()).optional()
+})
+
+export const ImportUserDnaResponse = zod.object({
+  "imported": zod.boolean(),
+  "dna": zod.object({
+  "weights": zod.record(zod.string(), zod.number()).describe('Theme id -> share (sums to ~100). `custom:` keys have no corpus theme yet.'),
+  "labels": zod.record(zod.string(), zod.string()),
+  "anti": zod.array(zod.object({
+  "kind": zod.enum(['topic', 'style', 'emotion', 'author', 'source', 'length', 'reading_level']),
+  "key": zod.string(),
+  "label": zod.string().nullish(),
+  "strength": zod.number().optional(),
+  "source": zod.enum(['chat', 'learned', 'confirmed']).optional(),
+  "evidence_ids": zod.array(zod.string()).optional()
+})),
+  "affinities": zod.array(zod.object({
+  "kind": zod.enum(['topic', 'style', 'emotion', 'author', 'source', 'length', 'reading_level']),
+  "key": zod.string(),
+  "label": zod.string().nullish(),
+  "strength": zod.number().optional(),
+  "source": zod.enum(['chat', 'learned', 'confirmed']).optional(),
+  "evidence_ids": zod.array(zod.string()).optional()
+})),
+  "prompt": zod.string(),
+  "dismissed": zod.array(zod.string()).optional(),
+  "version": zod.number().int(),
+  "updated_at": zod.string().optional()
+})
 })
 
 

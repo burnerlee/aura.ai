@@ -25,6 +25,9 @@ import type {
   CreatePostRequest,
   CreatePostResponse,
   DiscoverPostsParams,
+  DnaImportRequest,
+  DnaImportResponse,
+  DnaPatch,
   EmbedSummary,
   ErrorDetail,
   EventsRequest,
@@ -33,12 +36,15 @@ import type {
   GetUserFeedParams,
   GetUserProfile200,
   HealthStatus,
+  InterestDna,
   ListPostsParams,
+  ListTagsParams,
   OnboardRequest,
   Persona,
   PersonaVersionResponse,
   SearchRequest,
   SimilarPostsParams,
+  Tag,
   TuneRequest
 } from './api.schemas';
 
@@ -1413,5 +1419,347 @@ export const useChatWithAura = <TError = ErrorType<ErrorDetail>,
         TContext
       > => {
       return useMutation(getChatWithAuraMutationOptions(options));
+    }
+
+export const getListTagsUrl = (params?: ListTagsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/tags?${stringifiedParams}` : `/api/tags`
+}
+
+/**
+ * @summary Canonical tag vocabulary (themes, topics, styles)
+ */
+export const listTags = async (params?: ListTagsParams, options?: Parameters<typeof customFetch>[1]): Promise<Tag[]> => {
+
+  return customFetch<Tag[]>(getListTagsUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListTagsQueryKey = (params?: ListTagsParams,) => {
+    return [
+    `/api/tags`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getListTagsQueryOptions = <TData = Awaited<ReturnType<typeof listTags>>, TError = ErrorType<unknown>>(params?: ListTagsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listTags>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListTagsQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listTags>>> = ({ signal }) => listTags(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listTags>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListTagsQueryResult = NonNullable<Awaited<ReturnType<typeof listTags>>>
+export type ListTagsQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Canonical tag vocabulary (themes, topics, styles)
+ */
+
+export function useListTags<TData = Awaited<ReturnType<typeof listTags>>, TError = ErrorType<unknown>>(
+ params?: ListTagsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listTags>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListTagsQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getGetUserDnaUrl = (userId: string,) => {
+
+
+
+
+  return `/api/users/${userId}/dna`
+}
+
+/**
+ * Weights are keyed by theme id and sum to ~100. A profile that predates DNA is
+ * seeded from its persona on first read; a brand-new user has version 0.
+ * @summary Server-owned Interest DNA
+ */
+export const getUserDna = async (userId: string, options?: Parameters<typeof customFetch>[1]): Promise<InterestDna> => {
+
+  return customFetch<InterestDna>(getGetUserDnaUrl(userId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetUserDnaQueryKey = (userId: string,) => {
+    return [
+    `/api/users/${userId}/dna`
+    ] as const;
+    }
+
+
+export const getGetUserDnaQueryOptions = <TData = Awaited<ReturnType<typeof getUserDna>>, TError = ErrorType<unknown>>(userId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getUserDna>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetUserDnaQueryKey(userId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getUserDna>>> = ({ signal }) => getUserDna(userId, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: userId !== null && userId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getUserDna>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetUserDnaQueryResult = NonNullable<Awaited<ReturnType<typeof getUserDna>>>
+export type GetUserDnaQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Server-owned Interest DNA
+ */
+
+export function useGetUserDna<TData = Awaited<ReturnType<typeof getUserDna>>, TError = ErrorType<unknown>>(
+ userId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getUserDna>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetUserDnaQueryOptions(userId,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getPatchUserDnaUrl = (userId: string,) => {
+
+
+
+
+  return `/api/users/${userId}/dna`
+}
+
+/**
+ * @summary Edit Interest DNA (drag a slice, confirm or remove a rule)
+ */
+export const patchUserDna = async (userId: string,
+    dnaPatch: DnaPatch, options?: Parameters<typeof customFetch>[1]): Promise<InterestDna> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<InterestDna>(getPatchUserDnaUrl(userId),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(dnaPatch)
+  }
+);}
+
+
+
+
+
+export const getPatchUserDnaMutationKey = () => ['patchUserDna'] as const;
+
+export const getPatchUserDnaMutationOptions = <TError = ErrorType<ErrorDetail>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof patchUserDna>>, TError,PatchUserDnaMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof patchUserDna>>, TError,PatchUserDnaMutationVariables, TContext> => {
+
+const mutationKey = getPatchUserDnaMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof patchUserDna>>, PatchUserDnaMutationVariables> = (props) => {
+          const {userId,data} = props ?? {};
+
+          return  patchUserDna(userId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type PatchUserDnaMutationResult = NonNullable<Awaited<ReturnType<typeof patchUserDna>>>
+    export type PatchUserDnaMutationBody = BodyType<DnaPatch>
+    export type PatchUserDnaMutationError = ErrorType<ErrorDetail>
+    export type PatchUserDnaMutationVariables = {userId: string;data: BodyType<DnaPatch>}
+
+    /**
+ * @summary Edit Interest DNA (drag a slice, confirm or remove a rule)
+ */
+export const usePatchUserDna = <TError = ErrorType<ErrorDetail>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof patchUserDna>>, TError,PatchUserDnaMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof patchUserDna>>,
+        TError,
+        PatchUserDnaMutationVariables,
+        TContext
+      > => {
+      return useMutation(getPatchUserDnaMutationOptions(options));
+    }
+
+export const getImportUserDnaUrl = (userId: string,) => {
+
+
+
+
+  return `/api/users/${userId}/dna/import`
+}
+
+/**
+ * Never overrides an existing server DNA (imported=false).
+ * @summary One-time adoption of a browser-local Interest DNA
+ */
+export const importUserDna = async (userId: string,
+    dnaImportRequest: DnaImportRequest, options?: Parameters<typeof customFetch>[1]): Promise<DnaImportResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<DnaImportResponse>(getImportUserDnaUrl(userId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(dnaImportRequest)
+  }
+);}
+
+
+
+
+
+export const getImportUserDnaMutationKey = () => ['importUserDna'] as const;
+
+export const getImportUserDnaMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof importUserDna>>, TError,ImportUserDnaMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof importUserDna>>, TError,ImportUserDnaMutationVariables, TContext> => {
+
+const mutationKey = getImportUserDnaMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof importUserDna>>, ImportUserDnaMutationVariables> = (props) => {
+          const {userId,data} = props ?? {};
+
+          return  importUserDna(userId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ImportUserDnaMutationResult = NonNullable<Awaited<ReturnType<typeof importUserDna>>>
+    export type ImportUserDnaMutationBody = BodyType<DnaImportRequest>
+    export type ImportUserDnaMutationError = ErrorType<unknown>
+    export type ImportUserDnaMutationVariables = {userId: string;data: BodyType<DnaImportRequest>}
+
+    /**
+ * @summary One-time adoption of a browser-local Interest DNA
+ */
+export const useImportUserDna = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof importUserDna>>, TError,ImportUserDnaMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof importUserDna>>,
+        TError,
+        ImportUserDnaMutationVariables,
+        TContext
+      > => {
+      return useMutation(getImportUserDnaMutationOptions(options));
     }
 

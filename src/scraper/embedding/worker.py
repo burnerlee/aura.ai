@@ -18,6 +18,7 @@ from scraper.llm.factory import get_indexing_client
 from scraper.models.embeddable import SkipReason
 from scraper.storage.mongodb import MongoDocumentStore
 from scraper.storage.qdrant import QdrantVectorStore
+from scraper.tags.vocabulary import TagResolver, tag_refs_for_facets
 
 logger = logging.getLogger(__name__)
 
@@ -31,6 +32,21 @@ def _mean_vector(vectors: list[list[float]]) -> list[float]:
     return mean.tolist()
 
 
+def _tag_resolver(
+    store: MongoDocumentStore, client: LLMClient, settings: Settings
+) -> TagResolver | None:
+    """Resolver over the stored vocabulary, or None until ``scraper tags build`` has run."""
+    tags = store.list_tags()
+    if not tags:
+        return None
+    return TagResolver(
+        tags,
+        embed_fn=client.embed_query,
+        threshold=settings.tag_cluster_threshold,
+        theme_threshold=settings.theme_resolve_threshold,
+    )
+
+
 def _embed_one_raw(
     raw: dict[str, Any],
     *,
@@ -38,6 +54,7 @@ def _embed_one_raw(
     vectors: QdrantVectorStore,
     client: LLMClient,
     settings: Settings,
+    tag_resolver: TagResolver | None = None,
 ) -> str:
     """Embed a single Mongo document. Returns ``ready`` | ``skipped`` | ``failed``."""
     src = str(raw.get("source") or "unknown")
@@ -75,10 +92,18 @@ def _embed_one_raw(
             image_vector = client.embed_image(adapted.image_urls[0])
 
         payload = adapted.payload()
+        canonical_tags: list[dict[str, Any]] | None = None
         if facets is not None:
             payload["topics"] = facets.topics
             payload["style"] = facets.style
             payload["emotion_primary"] = facets.emotion.primary()
+            payload["reading_level"] = facets.reading_level
+            if tag_resolver is not None:
+                canonical_tags = [
+                    ref.model_dump(mode="json")
+                    for ref in tag_refs_for_facets(facets.model_dump(), tag_resolver)
+                ]
+                payload["tag_ids"] = [ref["id"] for ref in canonical_tags]
 
         point_id = vectors.upsert_post(
             source=src,
@@ -102,6 +127,7 @@ def _embed_one_raw(
             content_hash=adapted.content_hash,
             chunk_count=len(chunks),
             facets=facets.model_dump() if facets else None,
+            canonical_tags=canonical_tags,
         )
         logger.info("Embedded %s/%s (%d chunks)", src, external_id, len(chunks))
         return "ready"
@@ -141,6 +167,7 @@ def run_embed(
         store.ensure_indexes()
         vectors.ensure_collection()
         gemini = client or get_indexing_client(settings)
+        resolver = _tag_resolver(store, gemini, settings)
 
         for raw in store.iter_for_embedding(
             source=source,
@@ -150,7 +177,12 @@ def run_embed(
         ):
             summary["processed"] += 1
             status = _embed_one_raw(
-                raw, store=store, vectors=vectors, client=gemini, settings=settings
+                raw,
+                store=store,
+                vectors=vectors,
+                client=gemini,
+                settings=settings,
+                tag_resolver=resolver,
             )
             summary[status] += 1
 
@@ -193,6 +225,7 @@ def embed_by_ids(
         store.ensure_indexes()
         vectors.ensure_collection()
         gemini = client or get_indexing_client(settings)
+        resolver = _tag_resolver(store, gemini, settings)
 
         docs = store.get_many_by_ids(post_ids)
         for post_id in post_ids:
@@ -202,7 +235,12 @@ def embed_by_ids(
                 continue
             summary["processed"] += 1
             status = _embed_one_raw(
-                raw, store=store, vectors=vectors, client=gemini, settings=settings
+                raw,
+                store=store,
+                vectors=vectors,
+                client=gemini,
+                settings=settings,
+                tag_resolver=resolver,
             )
             summary[status] += 1
 

@@ -19,23 +19,14 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 from scraper.models.document import EmbeddingStatus
-from scraper.query.types import ScoredPost
+from scraper.models.tag import TagKind, TagRef
+from scraper.query.types import MatchInfo, ScoredPost
+from scraper.tags import GENERIC_LABELS
 
 # Seed labels kept for UGC composer defaults; live cards use facet topics.
 CATEGORY_IDS = ("cyberpunk", "ai", "space", "culture")
 UGC_SOURCE = "aura"
-_GENERIC_TOPICS = frozenset(
-    {
-        "newsletter",
-        "podcast",
-        "blog",
-        "article",
-        "post",
-        "general",
-        "misc",
-        "other",
-    }
-)
+_GENERIC_TOPICS = GENERIC_LABELS
 
 
 class PostKind(StrEnum):
@@ -59,6 +50,9 @@ class FeedCard(BaseModel):
     id: str
     kind: PostKind = PostKind.ARTICLE
     category: str = "General"
+    # Canonical tag id behind ``category`` (key into the user's Interest DNA), if tagged.
+    category_tag_id: str | None = None
+    canonical_tags: list[TagRef] = Field(default_factory=list)
     author: CardAuthor
     published_at: str
     title: str | None = None
@@ -78,6 +72,8 @@ class FeedCard(BaseModel):
     score: float | None = None
     why: str | None = None
     per_query_scores: dict[str, float] = Field(default_factory=dict)
+    # Relative match (percentile among everything scored for this request) + breakdown.
+    match: MatchInfo | None = None
 
 
 def _initials(name: str) -> str:
@@ -114,14 +110,37 @@ def _pick_topic_label(candidates: list[str]) -> str | None:
     return None
 
 
+def _canonical_tags(raw: dict[str, Any]) -> list[TagRef]:
+    refs: list[TagRef] = []
+    for item in raw.get("canonical_tags") or []:
+        try:
+            refs.append(TagRef.model_validate(item))
+        except ValueError:
+            continue
+    return refs
+
+
+def _category_tag(refs: list[TagRef]) -> TagRef | None:
+    """Primary theme (what Interest DNA is keyed by), else the first topic."""
+    for kind in (TagKind.THEME, TagKind.TOPIC):
+        found = next((r for r in refs if r.kind == kind), None)
+        if found is not None:
+            return found
+    return None
+
+
 def _normalize_category(raw: dict[str, Any]) -> str:
-    """Prefer facet topics over the old 4-bucket Interest DNA labels."""
+    """Prefer canonical tags, then facet topics, over the old 4-bucket DNA labels."""
     meta = raw.get("metadata") or {}
     if isinstance(meta, dict):
         cat = meta.get("category")
         if isinstance(cat, str) and cat.strip():
             # UGC still stores seed ids; pass them through.
             return cat.strip()
+
+    canonical = _category_tag(_canonical_tags(raw))
+    if canonical is not None:
+        return canonical.label[:48]
 
     facets = raw.get("facets") or {}
     if isinstance(facets, dict):
@@ -184,6 +203,7 @@ def mongo_to_card(
     score: float | None = None,
     why: str | None = None,
     per_query_scores: dict[str, float] | None = None,
+    match: MatchInfo | None = None,
 ) -> FeedCard:
     """Map a Mongo posts document to a UI card."""
     post_id = str(raw.get("_id") or raw.get("post_id") or "")
@@ -221,10 +241,16 @@ def mongo_to_card(
             image_url = media[0]
 
     status = raw.get("embedding_status") or EmbeddingStatus.PENDING.value
+    canonical_tags = _canonical_tags(raw)
+    meta = raw.get("metadata")
+    has_ugc_category = isinstance(meta, dict) and isinstance(meta.get("category"), str)
+    category_tag = None if has_ugc_category else _category_tag(canonical_tags)
     return FeedCard(
         id=post_id,
         kind=_normalize_kind(raw),
         category=_normalize_category(raw),
+        category_tag_id=category_tag.id if category_tag else None,
+        canonical_tags=canonical_tags,
         author=CardAuthor(
             name=str(author_name),
             handle=handle,
@@ -248,6 +274,7 @@ def mongo_to_card(
         score=score,
         why=why,
         per_query_scores=per_query_scores or {},
+        match=match,
     )
 
 
@@ -274,6 +301,7 @@ def hydrate_scored(
                     score=result.score,
                     why=result.reason,
                     per_query_scores=result.per_query_scores,
+                    match=result.match,
                 )
             )
             continue
@@ -285,6 +313,7 @@ def hydrate_scored(
                 score=result.score,
                 why=result.reason,
                 per_query_scores=result.per_query_scores,
+                match=result.match,
             )
         )
     return cards

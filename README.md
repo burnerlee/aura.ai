@@ -94,6 +94,7 @@ make web-ui                   # aura-web :5173 (proxy /api → BFF)
 | `make mongo-up` / `qdrant-up` | Start services |
 | `make scrape-substack` / `discover` | Scrape |
 | `make embed` / `embed-status` | Embedding worker |
+| `make tags` | Build the canonical tag vocabulary + themes from facets and tag every post |
 | `make search QUERY=…` | Semantic search |
 | `make serve` | FastAPI recommendation API |
 | `make web-api` / `web-ui` / `web-ui-demo` | Express BFF + Aura UI |
@@ -114,6 +115,9 @@ See `.env.example`. Important vars:
 | `CHUNK_WORDS` / `MAX_CHUNKS_PER_POST` | `300` / `32` | |
 | `FILTER_K` | `64` | Stage-1 candidate pool |
 | `WEIGHT_VERSION` | `default_v1` | Live weight table (`hold_ms` unused) |
+| `TAG_CLUSTER_THRESHOLD` | `0.85` | Cosine above which facet labels merge into one tag |
+| `THEME_RESOLVE_THRESHOLD` | `0.75` | Cosine for mapping a free-form label to a theme via its nearest topic |
+| `LLM_MAX_OUTPUT_TOKENS` | `8192` | Output cap for LiteLLM JSON calls (thinking models spend part of it on reasoning) |
 
 ## Content adapters
 
@@ -174,7 +178,27 @@ scraper feed demo -k 10 --explain
 scraper persona demo --refresh
 ```
 
-API (see `/docs`): `POST /search`, `GET /posts/{id}/similar`, `GET /users/{id}/feed`, `GET /users/{id}/pair`, `POST /users/{id}/events`, `POST /users/{id}/tune`, `POST /users/{id}/onboard`, `POST /users/{id}/persona/refresh`.
+API (see `/docs`): `POST /search`, `GET /posts/{id}/similar`, `GET /users/{id}/feed`, `GET /users/{id}/pair`, `POST /users/{id}/events`, `POST /users/{id}/tune`, `POST /users/{id}/onboard`, `POST /users/{id}/persona/refresh`, `GET /tags`, `GET|PATCH /users/{id}/dna`, `POST /users/{id}/dna/import`.
+
+## Tags, themes & Interest DNA
+
+Facet labels written by the LLM are free-form ("AI", "ai", "Artificial Intelligence"), so everything that needs a stable vocabulary keys on a **canonical tag** instead:
+
+```bash
+make tags                      # or: scraper tags build [--threshold 0.85] [--dry-run] [--no-apply]
+scraper tags list --kind theme
+```
+
+- **Topic / style tags**: facet labels clustered by embedding cosine. Ids look like `topic:artificial-intelligence`; existing canonical labels stay put across rebuilds, and a retired id keeps a `merged_into` link.
+- **Themes**: a coarse level (about a dozen) the LLM groups the topic tags into (embedding k-means is the fallback). A post's primary theme becomes its card `category`, and **Interest DNA is keyed by theme**, so the ring stays readable instead of fragmenting into hundreds of one-post tags.
+- Posts carry `canonical_tags` / `tag_ids` (Mongo and Qdrant payload). New posts are tagged as they are embedded.
+
+**Interest DNA** is owned by the server (`UserProfile.dna`): weights over theme ids summing to ~100, plus `anti` / `affinity` rules. It is built from the Aura chat, moved by every resonate / banish, edited with `PATCH /users/{id}/dna` (optimistic `base_version`), and its top themes are also retrieval queries, so the DNA you see is the DNA that ranks.
+
+**Match %** is relative and computed by the engine: the post's percentile of `fit = similarity - aversion + affinity` (no recency) among *every candidate scored for the request*, capped at 98. Cards carry the breakdown in `match` (`components`, `top_attribution`, `flags`, `pool_size`). Feedback sent with the `match_percent` the card showed counts for more when the match was confident and wrong.
+
+**Learning from the post, not just the theme.** Each reaction stores a snapshot of the post (style, tone, length, author, topic tags). Per attribute, the skip rate is compared with the user's own baseline; large lifts become `learned` anti rules (and affinities), which the UI offers to confirm or dismiss. After a banish the response includes `noticed` chips for one-tap avoidance. Dismissed rules are not proposed again.
+
 
 ## Project layout
 
@@ -184,7 +208,8 @@ src/scraper/
 ├── embedding/         # chunker, facets, worker
 ├── llm/gemini.py
 ├── query/             # scoring, engine
-├── profile/           # weights, state, clusters, persona, service
+├── profile/           # weights, state, clusters, persona, dna, patterns, service
+├── tags/              # canonical tag vocabulary, themes
 ├── eval/offline.py
 ├── api/app.py
 ├── connectors/

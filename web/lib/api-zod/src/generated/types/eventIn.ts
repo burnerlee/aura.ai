@@ -21,4 +21,8 @@ export interface EventIn {
   read_ratio?: number | null;
   text?: string | null;
   pair_post_id?: string | null;
+  /** Match percent the card showed; weights how much the feedback counts. */
+  match_percent?: number | null;
+  /** Top attribution on the card (what pulled the post in). */
+  matched_label?: string | null;
 }

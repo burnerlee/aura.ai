@@ -5,9 +5,11 @@
 from __future__ import annotations
 
 from enum import StrEnum
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
+
+from scraper.models.user import DNARule
 
 
 class QueryKind(StrEnum):
@@ -16,6 +18,7 @@ class QueryKind(StrEnum):
     STATE = "state"
     PERSONA = "persona"
     CENTROID = "centroid"
+    THEME = "theme"  # one of the user's Interest DNA themes
 
 
 class QueryVector(BaseModel):
@@ -47,6 +50,36 @@ class Filters(BaseModel):
         return {k: v for k, v in self.model_dump().items() if v is not None}
 
 
+class RuleSet(BaseModel):
+    """Post-level patterns from the user's Interest DNA, applied while scoring."""
+
+    anti: list[DNARule] = Field(default_factory=list)
+    affinities: list[DNARule] = Field(default_factory=list)
+
+
+class MatchFlag(BaseModel):
+    kind: Literal["aversion", "affinity"]
+    label: str
+    rule_key: str
+
+
+class MatchInfo(BaseModel):
+    """Why a post scored as it did, in terms the UI can show without re-deriving.
+
+    ``percent`` is relative: where this post's fit sits among every candidate the
+    engine scored for this request (not the shown list), so "92" means better than 92%
+    of what was considered. ``fit`` is the absolute number it was derived from.
+    """
+
+    percent: int | None = None
+    fit: float
+    pool_size: int
+    reliable: bool = True  # False when the pool is too small for a stable percentile
+    components: dict[str, float] = Field(default_factory=dict)
+    top_attribution: str | None = None
+    flags: list[MatchFlag] = Field(default_factory=list)
+
+
 class ScoredPost(BaseModel):
     post_id: str
     score: float
@@ -54,3 +87,4 @@ class ScoredPost(BaseModel):
     per_query_scores: dict[str, float] = Field(default_factory=dict)
     reason: str | None = None
     point_id: str | None = None
+    match: MatchInfo | None = None

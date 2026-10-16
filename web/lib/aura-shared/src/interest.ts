@@ -279,6 +279,9 @@ export function matchPercent(post: FeedPost, profile: InterestProfile): number {
 }
 
 export function rankPosts(posts: FeedPost[], profile: InterestProfile): FeedPost[] {
+  // The server already ranked these (relevance + diversity); re-sorting by a raw score
+  // would undo the diversity pass and disagree with the match percent shown.
+  if (posts.some((post) => post.match)) return [...posts];
   return posts
     .map((post) => {
       // API feed scores are profile-powered; prefer them for ordering when present.

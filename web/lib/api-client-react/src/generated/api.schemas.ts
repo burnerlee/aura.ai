@@ -33,6 +33,52 @@ export interface CardAuthor {
 
 export type FeedCardPerQueryScores = {[key: string]: number};
 
+export type TagKind = typeof TagKind[keyof typeof TagKind];
+
+
+export const TagKind = {
+  topic: 'topic',
+  style: 'style',
+  theme: 'theme',
+} as const;
+
+export interface CardTag {
+  id: string;
+  label: string;
+  kind: TagKind;
+}
+
+export type MatchFlagKind = typeof MatchFlagKind[keyof typeof MatchFlagKind];
+
+
+export const MatchFlagKind = {
+  aversion: 'aversion',
+  affinity: 'affinity',
+} as const;
+
+export interface MatchFlag {
+  kind: MatchFlagKind;
+  label: string;
+  rule_key: string;
+}
+
+export type MatchInfoComponents = {[key: string]: number};
+
+/**
+ * percent is relative: the post's percentile among every candidate scored for
+ * this request (not the shown list). fit is the absolute value behind it.
+ */
+export interface MatchInfo {
+  /** Null when the scored pool is too small to rank against. */
+  percent?: number | null;
+  fit: number;
+  pool_size: number;
+  reliable: boolean;
+  components: MatchInfoComponents;
+  top_attribution?: string | null;
+  flags: MatchFlag[];
+}
+
 export interface FeedCard {
   /** MongoDB _id */
   id: string;
@@ -57,6 +103,10 @@ export interface FeedCard {
   score?: number | null;
   why?: string | null;
   per_query_scores?: FeedCardPerQueryScores;
+  /** Theme id behind `category`; the key into Interest DNA weights. */
+  category_tag_id?: string | null;
+  canonical_tags?: CardTag[];
+  match?: MatchInfo | null;
 }
 
 export interface SearchRequest {
@@ -146,16 +196,83 @@ export interface EventIn {
   read_ratio?: number | null;
   text?: string | null;
   pair_post_id?: string | null;
+  /** Match percent the card showed; weights how much the feedback counts. */
+  match_percent?: number | null;
+  /** Top attribution on the card (what pulled the post in). */
+  matched_label?: string | null;
 }
 
 export interface EventsRequest {
   events: EventIn[];
 }
 
+export type DnaRuleKind = typeof DnaRuleKind[keyof typeof DnaRuleKind];
+
+
+export const DnaRuleKind = {
+  topic: 'topic',
+  style: 'style',
+  emotion: 'emotion',
+  author: 'author',
+  source: 'source',
+  length: 'length',
+  reading_level: 'reading_level',
+} as const;
+
+export type DnaRuleSource = typeof DnaRuleSource[keyof typeof DnaRuleSource];
+
+
+export const DnaRuleSource = {
+  chat: 'chat',
+  learned: 'learned',
+  confirmed: 'confirmed',
+} as const;
+
+export interface DnaRule {
+  kind: DnaRuleKind;
+  key: string;
+  label?: string | null;
+  strength?: number;
+  source?: DnaRuleSource;
+  evidence_ids?: string[];
+}
+
+/**
+ * Theme id -> share (sums to ~100). `custom:` keys have no corpus theme yet.
+ */
+export type InterestDnaWeights = {[key: string]: number};
+
+export type InterestDnaLabels = {[key: string]: string};
+
+export interface InterestDna {
+  /** Theme id -> share (sums to ~100). `custom:` keys have no corpus theme yet. */
+  weights: InterestDnaWeights;
+  labels: InterestDnaLabels;
+  anti: DnaRule[];
+  affinities: DnaRule[];
+  prompt: string;
+  dismissed?: string[];
+  version: number;
+  updated_at?: string;
+}
+
+export interface NoticedAttr {
+  kind: DnaRuleKind;
+  key: string;
+  label: string;
+  seen: number;
+  negative: number;
+}
+
 export interface EventsResponse {
   ok: boolean;
   count: number;
   persona_version?: number | null;
+  dna?: InterestDna | null;
+  /** Attributes of a just-skipped post, offered as one-tap chips. */
+  noticed?: NoticedAttr[];
+  /** Newly mined avoidances awaiting confirm / dismiss. */
+  proposals?: DnaRule[];
 }
 
 export interface TuneRequest {
@@ -229,11 +346,49 @@ export interface AuraChatResponse {
   profile?: AuraProfileDraft | null;
   persona?: Persona | null;
   persona_version?: number | null;
+  dna?: InterestDna | null;
 }
 
 export interface PersonaVersionResponse {
   persona: Persona;
   version: number;
+}
+
+export interface Tag {
+  id: string;
+  kind: TagKind;
+  label: string;
+  aliases?: string[];
+  doc_count: number;
+  parent_id?: string | null;
+}
+
+/**
+ * Theme id -> target percent; every other theme rescales.
+ */
+export type DnaPatchSetWeights = {[key: string]: number};
+
+export interface DnaPatch {
+  base_version: number;
+  /** Theme id -> target percent; every other theme rescales. */
+  set_weights?: DnaPatchSetWeights;
+  remove_weights?: string[];
+  add_anti?: DnaRule[];
+  remove_anti?: string[];
+  prompt?: string | null;
+}
+
+export type DnaImportRequestVector = {[key: string]: number};
+
+export interface DnaImportRequest {
+  vector?: DnaImportRequestVector;
+  prompt?: string;
+  excluded_categories?: string[];
+}
+
+export interface DnaImportResponse {
+  imported: boolean;
+  dna: InterestDna;
 }
 
 export type DiscoverPostsParams = {
@@ -268,4 +423,17 @@ explain?: boolean;
 };
 
 export type GetUserProfile200 = { [key: string]: unknown };
+
+export type ListTagsParams = {
+kind?: TagKind;
+/**
+ * @minimum 1
+ * @maximum 500
+ */
+limit?: number;
+/**
+ * @minimum 0
+ */
+min_docs?: number;
+};
 
