@@ -101,7 +101,7 @@ export function localAuraTurn(
   if (!userTurns.length) {
     return {
       message:
-        "Hey — I'm Aura. I'll learn what you like through a quick chat, then shape your feed around it. What kinds of posts pull you in first?",
+        "Hey — I'm Aura. One honest prompt and I'll start building your Interest DNA — the signal that shapes your feed. What pulls you in?",
       options: [
         ...defaults.map((label, i) => ({ id: `theme-${i}`, label })),
         { id: "mix", label: "A mix — surprise me" },

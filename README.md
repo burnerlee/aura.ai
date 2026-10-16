@@ -108,7 +108,7 @@ See `.env.example`. Important vars:
 |----------|---------|-------|
 | `GEMINI_API_KEY` | _(required)_ | Google AI Studio / Gemini API key |
 | `GEMINI_EMBEDDING_MODEL` | `gemini-embedding-2` | |
-| `GEMINI_LLM_MODEL` | `gemini-3.8-flash` | Facets + persona |
+| `GEMINI_LLM_MODEL` | `gemini-2.5-flash` | Facets + persona + Aura chat |
 | `EMBEDDING_DIM` | `768` | MRL truncation |
 | `QDRANT_URL` | `http://localhost:6333` | |
 | `CHUNK_WORDS` / `MAX_CHUNKS_PER_POST` | `300` / `32` | |

@@ -116,13 +116,13 @@ web-install: ## Install web monorepo deps (pnpm)
 web-codegen: ## Regenerate Orval client + Zod from OpenAPI
 	cd web && pnpm --filter @workspace/api-spec exec orval --config ./orval.config.ts
 
-web-api: ## Start Express BFF on :5000 (proxies to Python :8000)
-	cd web && PORT=$${PORT:-5000} RECOMMENDATION_API_URL=$${RECOMMENDATION_API_URL:-http://127.0.0.1:8000} \
+web-api: ## Start Express BFF on :5001 (proxies to Python :8000; avoids macOS AirPlay on :5000)
+	cd web && PORT=$${PORT:-5001} RECOMMENDATION_API_URL=$${RECOMMENDATION_API_URL:-http://127.0.0.1:8000} \
 		pnpm --filter @workspace/api-server run dev
 
 web-ui: ## Start aura-web against live API (needs make serve + make web-api)
 	cd web && PORT=$${PORT:-5173} BASE_PATH=/ \
-		API_PROXY_TARGET=$${API_PROXY_TARGET:-http://127.0.0.1:5000} \
+		API_PROXY_TARGET=$${API_PROXY_TARGET:-http://127.0.0.1:5001} \
 		pnpm --filter @workspace/aura-web run dev
 
 web-ui-demo: ## Start aura-web in offline demo mode

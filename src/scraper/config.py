@@ -32,7 +32,7 @@ class Settings(BaseSettings):
     # Gemini (free-tier — preferred for user-side inference: onboard / persona / rerank)
     gemini_api_key: str | None = None
     gemini_embedding_model: str = "gemini-embedding-001"
-    gemini_llm_model: str = "gemini-3.8-flash"
+    gemini_llm_model: str = "gemini-2.5-flash"
     embedding_dim: int = 768
     embed_concurrency: int = 4
     facets_enabled: bool = True
@@ -42,7 +42,7 @@ class Settings(BaseSettings):
     litellm_api_key: str | None = None
     litellm_api_base: str | None = None
     litellm_embedding_model: str = "gemini/gemini-embedding-001"
-    litellm_llm_model: str = "openai/gemini-3.8-flash"
+    litellm_llm_model: str = "openai/gemini-2.5-flash"
 
     # Qdrant
     qdrant_url: str = "http://localhost:6333"

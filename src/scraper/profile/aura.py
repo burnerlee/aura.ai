@@ -97,8 +97,8 @@ def _opening_turn(known_themes: list[str]) -> AuraTurn:
     )
     return AuraTurn(
         message=(
-            "Hey — I'm Aura. I'll learn what you like through a quick chat, "
-            "then shape your feed around it. What kinds of posts pull you in first?"
+            "Hey — I'm Aura. One honest prompt and I'll start building your "
+            "Interest DNA — the signal that shapes your feed. What pulls you in?"
         ),
         options=options,
         suggested_themes=theme_opts[:3],

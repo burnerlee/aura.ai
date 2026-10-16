@@ -27,6 +27,7 @@ class QdrantVectorStore:
         self._client = QdrantClient(
             url=self.settings.qdrant_url,
             api_key=self.settings.qdrant_api_key,
+            check_compatibility=False,
         )
 
     @property

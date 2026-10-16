@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent } from 'react';
+import { createPortal } from 'react-dom';
 import {
   ArrowDown, ArrowRight, ArrowUpRight, Bookmark, Check, Compass, Heart,
   House, Link as LinkIcon, MessageCircle, Plus, Search, Sparkles, ThumbsDown,
@@ -16,6 +17,7 @@ import { useRecommendationFeed } from '@/hooks/use-recommendation-feed';
 import { shortUserId, shortUserLabel } from '@/lib/user-id';
 
 const AURA_CHAT_KEY = 'aura:chat-complete:v1';
+const SWIPE_COACH_KEY = 'aura:swipe-coach:v1';
 /** Matches the category step in adjustInterestVector. */
 const AURA_POINT_STEP = 7;
 
@@ -118,10 +120,11 @@ function InterestPanel({ profile, themes, onEdit, variant, pointBurst }: {
     <div className="vector-note"><span className="vector-pulse"/>Every resonate or banish updates this profile.</div>
   </aside>;
 }
-function PostCard({ post, profile, saved, onFeedback, onToggleSaved, variant, why, onSimilar }: {
+function PostCard({ post, profile, saved, onFeedback, onToggleSaved, variant, why, onSimilar, spotlight }: {
   post: FeedPost; profile: InterestProfile; saved: boolean;
   variant: 'current' | 'glass';
   why?: string;
+  spotlight?: boolean;
   onFeedback: (post: FeedPost, direction: FeedbackDirection, origin: DOMRect) => void;
   onToggleSaved: (post: FeedPost) => void;
   onSimilar?: (post: FeedPost) => void;
@@ -150,7 +153,13 @@ function PostCard({ post, profile, saved, onFeedback, onToggleSaved, variant, wh
     if (distance < -78) emitFeedback('banish');
   }
   const categoryClass = category.id.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'general';
-  return <article ref={cardRef} className={`post-card post-${post.kind} post-${categoryClass} signal-${signal ?? ''}`} style={{ transform: delta ? `translateX(${delta * .18}px) rotate(${delta * .012}deg)` : undefined }} onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={() => { start.current = null; setDelta(0); }}>
+  return <article ref={cardRef} className={`post-card post-${post.kind} post-${categoryClass} signal-${signal ?? ''}${spotlight ? ' swipe-spotlight' : ''}`} style={{ transform: delta ? `translateX(${delta * .18}px) rotate(${delta * .012}deg)` : undefined }} onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={() => { start.current = null; setDelta(0); }}>
+    {spotlight && (
+      <div className="swipe-coach-hints" aria-hidden="true">
+        <span className="swipe-hint banish">← Banish</span>
+        <span className="swipe-hint resonate">Resonate →</span>
+      </div>
+    )}
     {signal && <div className={`signal-flash ${signal}`} aria-live="polite">{signal === 'resonate' ? <Check size={15}/> : <ThumbsDown size={15}/>} {signal === 'resonate' ? 'Resonated' : 'Banished'}</div>}
     {post.imageUrl ? (sourceUrl
       ? <a className="post-image" href={sourceUrl} target="_blank" rel="noopener noreferrer" data-no-swipe><img src={post.imageUrl} alt={post.imageAlt || post.title || 'Aura post image'} loading="lazy"/><div className="image-topline"><span className="category-chip" style={{ '--chip-color': categoryAccent(category.id, variant) } as CSSProperties}><i/>{category.shortLabel}</span><button type="button" className={`ai-badge ${showInsight ? 'active' : ''}`} data-no-swipe onClick={(event) => { event.preventDefault(); event.stopPropagation(); setShowInsight(!showInsight); }}><Sparkles size={12}/> Match insight</button></div></a>
@@ -181,12 +190,18 @@ function AuraChatModal({
   onClose,
   onApply,
   talkToAura,
+  revealCoach = true,
+  stagedEnter = false,
 }: {
   themes: CategoryMeta[];
   variant: 'current' | 'glass';
   onClose: () => void;
   onApply: (profile: InterestProfile, turn: AuraTurn, messages: AuraChatMessage[]) => void | Promise<void>;
   talkToAura: (messages: AuraChatMessage[], knownThemes: string[], apply?: boolean) => Promise<AuraTurn>;
+  /** When false, hold the compose spotlight until the intro sequence unlocks it. */
+  revealCoach?: boolean;
+  /** Slower backdrop/modal entrance after the brand rise. */
+  stagedEnter?: boolean;
 }) {
   const knownThemes = useMemo(() => themes.map((t) => t.label || t.id), [themes]);
   const [messages, setMessages] = useState<AuraChatMessage[]>([]);
@@ -194,11 +209,25 @@ function AuraChatModal({
   const [draft, setDraft] = useState('');
   const [busy, setBusy] = useState(false);
   const [applying, setApplying] = useState(false);
+  const [coachActive, setCoachActive] = useState(false);
   const threadRef = useRef<HTMLDivElement | null>(null);
+  const dockRef = useRef<HTMLDivElement | null>(null);
   const preview = useMemo(() => {
     if (!turn?.profile) return null;
     return interestProfileFromAura(turn.profile, themes.map((t) => t.id));
   }, [turn, themes]);
+
+  /** Seed chips only — no API call until the user speaks first. */
+  const seedThemes = useMemo(() => {
+    const fromFeed = knownThemes.filter(Boolean).slice(0, 4);
+    return fromFeed.length ? fromFeed : ['AI & ML', 'deep space', 'cyberpunk', 'indie culture'];
+  }, [knownThemes]);
+  const seedOptions = useMemo<AuraOption[]>(() => [
+    ...seedThemes.map((label, i) => ({ id: `theme-${i}`, label })),
+    { id: 'mix', label: 'A mix — surprise me' },
+    { id: 'unsure', label: 'Not sure yet — help me explore' },
+  ], [seedThemes]);
+  const awaitingUser = messages.length === 0;
 
   useEffect(() => {
     const handler = (event: KeyboardEvent) => { if (event.key === 'Escape') onClose(); };
@@ -212,25 +241,26 @@ function AuraChatModal({
   }, [onClose]);
 
   useEffect(() => {
-    let cancelled = false;
-    setBusy(true);
-    void talkToAura([], knownThemes)
-      .then((opening) => {
-        if (cancelled) return;
-        setTurn(opening);
-        setMessages([{ role: 'assistant', content: opening.message }]);
-      })
-      .finally(() => { if (!cancelled) setBusy(false); });
-    return () => { cancelled = true; };
-  }, [knownThemes, talkToAura]);
-
-  useEffect(() => {
     threadRef.current?.scrollTo({ top: threadRef.current.scrollHeight, behavior: 'smooth' });
   }, [messages, turn, busy]);
+
+  useEffect(() => {
+    if (!revealCoach || localStorage.getItem(AURA_CHAT_KEY)) {
+      setCoachActive(false);
+      return;
+    }
+    setCoachActive(true);
+  }, [revealCoach]);
+
+  useEffect(() => {
+    if (!coachActive) return;
+    dockRef.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  }, [coachActive]);
 
   async function send(text: string) {
     const content = text.trim();
     if (!content || busy || applying) return;
+    setCoachActive(false);
     const nextMessages: AuraChatMessage[] = [...messages, { role: 'user', content }];
     setMessages(nextMessages);
     setDraft('');
@@ -279,16 +309,21 @@ function AuraChatModal({
         .slice(0, 3)
     : [];
 
-  return <div className="modal-backdrop aura-chat-backdrop" role="presentation" onMouseDown={event => event.target === event.currentTarget && onClose()}>
-    <section className="modal-card aura-chat-modal" role="dialog" aria-modal="true" aria-labelledby="aura-chat-title">
+  return <div className={`modal-backdrop aura-chat-backdrop${stagedEnter ? ' aura-intro-enter' : ''}`} role="presentation" onMouseDown={event => event.target === event.currentTarget && onClose()}>
+    <section className={`modal-card aura-chat-modal${coachActive ? ' aura-chat-coaching' : ''}`} role="dialog" aria-modal="true" aria-labelledby="aura-chat-title">
       <div className="modal-header aura-chat-header">
         <div className="modal-title-icon"><Sparkles size={18}/></div>
-        <div><span className="eyebrow">MEET AURA</span><h2 id="aura-chat-title">Let’s find your signal.</h2></div>
+        <div><span className="eyebrow">MEET AURA</span><h2 id="aura-chat-title">Your feed starts with one sentence.</h2></div>
         <button className="icon-button modal-close" aria-label="Close" onClick={onClose}><X size={18}/></button>
       </div>
 
       <div className="aura-chat-body">
         <div className="aura-chat-thread" ref={threadRef} aria-live="polite">
+          {awaitingUser && !busy && (
+            <div className="aura-chat-empty">
+              <p>Your turn — say what you’re into, or tap a chip below.</p>
+            </div>
+          )}
           {messages.map((msg, index) => (
             <div key={`${msg.role}-${index}`} className={`aura-bubble ${msg.role}`}>
               {msg.role === 'assistant' && <span className="aura-bubble-label">Aura</span>}
@@ -307,8 +342,22 @@ function AuraChatModal({
         </div>
       </div>
 
-      <div className="aura-chat-dock">
-        {!!turn?.suggested_themes?.length && !turn.ready && (
+      <div className="aura-chat-dock" ref={dockRef}>
+        {coachActive && (
+          <div className="aura-chat-coach-tip" role="status">
+            <p>Tell me what you’re into — even half a thought works. I’ll turn it into your Interest DNA and tune what shows up next.</p>
+            <small>Or tap a chip if you’d rather pick than type.</small>
+          </div>
+        )}
+        {awaitingUser && !busy && (
+          <div className="aura-theme-row">
+            <span>Themes</span>
+            {seedThemes.slice(0, 4).map((theme) => (
+              <button key={theme} type="button" className="suggestion-chip" disabled={applying} onClick={() => void send(`More ${theme}`)}>+ {theme}</button>
+            ))}
+          </div>
+        )}
+        {!!turn?.suggested_themes?.length && !turn.ready && !awaitingUser && (
           <div className="aura-theme-row">
             <span>Themes</span>
             {turn.suggested_themes.slice(0, 4).map((theme) => (
@@ -316,7 +365,14 @@ function AuraChatModal({
             ))}
           </div>
         )}
-        {!!turn?.options?.length && !busy && (
+        {awaitingUser && !busy && (
+          <div className="aura-options" role="group" aria-label="Quick replies">
+            {seedOptions.map((option) => (
+              <button key={option.id} type="button" className="aura-option-chip" disabled={applying} onClick={() => void pickOption(option)}>{option.label}</button>
+            ))}
+          </div>
+        )}
+        {!!turn?.options?.length && !busy && !awaitingUser && (
           <div className="aura-options" role="group" aria-label="Quick replies">
             {turn.options.map((option) => (
               <button key={option.id} type="button" className="aura-option-chip" disabled={busy || applying} onClick={() => void pickOption(option)}>{option.label}</button>
@@ -345,7 +401,15 @@ function AuraChatModal({
         )}
         <form className="aura-chat-compose" onSubmit={(event) => { event.preventDefault(); void send(draft); }}>
           <label className="sr-only" htmlFor="aura-chat-input">Message Aura</label>
-          <input id="aura-chat-input" className="aura-chat-input" value={draft} onChange={(event) => setDraft(event.target.value)} placeholder="Type a reply, or tap an option…" disabled={busy || applying} autoFocus/>
+          <input
+            id="aura-chat-input"
+            className="aura-chat-input"
+            value={draft}
+            onChange={(event) => setDraft(event.target.value)}
+            placeholder={coachActive ? 'e.g. “deep space essays, not hype AI”' : 'Type a reply, or tap an option…'}
+            disabled={busy || applying}
+            autoFocus
+          />
           <button type="submit" className="button button-secondary" disabled={busy || applying || !draft.trim()}>Send</button>
         </form>
         <div className="modal-actions aura-chat-actions">
@@ -414,24 +478,107 @@ export function AuraFeed({ variant = 'current' }: { variant?: 'current' | 'glass
   const [demoPosts,setDemoPosts] = useState<FeedPost[]>(() => readLocal(POSTS_KEY,DEMO_POSTS));
   const [savedIds,setSavedIds] = useState<string[]>(() => readLocal(SAVED_KEY,[]));
   const [savedPosts,setSavedPosts] = useState<Record<string, FeedPost>>(() => readLocal(SAVED_POSTS_KEY,{}));
-  const [section,setSection] = useState<Section>('feed'), [activeCategory,setActiveCategory] = useState('all'), [search,setSearch] = useState('');
+  const [section,setSection] = useState<Section>('discover'), [activeCategory,setActiveCategory] = useState('all'), [search,setSearch] = useState('');
   const [searchOpen,setSearchOpen] = useState(false), [interestOpen,setInterestOpen] = useState(false), [composerOpen,setComposerOpen] = useState(false), [profilePopoverOpen,setProfilePopoverOpen] = useState(false), [toast,setToast] = useState('');
   const [pairOpen, setPairOpen] = useState(false);
   const [pairPosts, setPairPosts] = useState<[FeedPost, FeedPost] | null>(null);
   const [pointBurst, setPointBurst] = useState<AuraPointBurst | null>(null);
   const [flyBursts, setFlyBursts] = useState<AuraPointBurst[]>([]);
   const [navHit, setNavHit] = useState<'plus' | 'minus' | null>(null);
+  const [swipeCoachActive, setSwipeCoachActive] = useState(false);
+  const [pendingSwipeCoach, setPendingSwipeCoach] = useState(false);
+  /** First-visit entrance: brand → rise → modal → coach spotlight. */
+  const [introPhase, setIntroPhase] = useState<'off' | 'brand' | 'rise' | 'modal' | 'done'>(
+    () => (localStorage.getItem(AURA_CHAT_KEY) ? 'off' : 'brand'),
+  );
+  const [chatStagedEnter, setChatStagedEnter] = useState(false);
   const profilePopoverRef = useRef<HTMLDivElement | null>(null);
   const profileNavRef = useRef<HTMLButtonElement | null>(null);
+  const introRef = useRef<HTMLDivElement | null>(null);
+  const introScrollArmed = useRef(true);
+  const touchStartY = useRef<number | null>(null);
   const toastTimer = useRef<number | undefined>(undefined);
   const searchTimer = useRef<number | undefined>(undefined);
   const burstTimer = useRef<number | undefined>(undefined);
   const navHitTimer = useRef<number | undefined>(undefined);
   const live = useRecommendationFeed(demoPosts);
+  function beginIntroRise() {
+    if (!introScrollArmed.current) return;
+    introScrollArmed.current = false;
+    setIntroPhase((phase) => (phase === 'brand' ? 'rise' : phase));
+  }
   useEffect(() => {
-    if (localStorage.getItem(AURA_CHAT_KEY)) return;
-    setInterestOpen(true);
-  }, []);
+    if (introPhase !== 'brand') return;
+    introScrollArmed.current = true;
+    const onWheel = (event: WheelEvent) => {
+      if (event.deltaY > 8) {
+        event.preventDefault();
+        beginIntroRise();
+      }
+    };
+    const onTouchStart = (event: TouchEvent) => {
+      touchStartY.current = event.touches[0]?.clientY ?? null;
+    };
+    const onTouchMove = (event: TouchEvent) => {
+      if (touchStartY.current === null) return;
+      const y = event.touches[0]?.clientY ?? touchStartY.current;
+      // Finger moves up → scroll down
+      if (touchStartY.current - y > 28) {
+        event.preventDefault();
+        beginIntroRise();
+      }
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'ArrowDown' || event.key === 'PageDown' || event.key === ' ') {
+        event.preventDefault();
+        beginIntroRise();
+      }
+    };
+    const node = introRef.current;
+    node?.addEventListener('wheel', onWheel, { passive: false });
+    node?.addEventListener('touchstart', onTouchStart, { passive: true });
+    node?.addEventListener('touchmove', onTouchMove, { passive: false });
+    window.addEventListener('keydown', onKeyDown);
+    return () => {
+      node?.removeEventListener('wheel', onWheel);
+      node?.removeEventListener('touchstart', onTouchStart);
+      node?.removeEventListener('touchmove', onTouchMove);
+      window.removeEventListener('keydown', onKeyDown);
+    };
+  }, [introPhase]);
+  useEffect(() => {
+    if (introPhase !== 'rise') return;
+    const timers: number[] = [];
+    // Open chat mid-rise so the handoff is continuous — no pause at the top.
+    timers.push(window.setTimeout(() => {
+      setChatStagedEnter(true);
+      setInterestOpen(true);
+      setIntroPhase('modal');
+    }, 520));
+    timers.push(window.setTimeout(() => setIntroPhase('done'), 1280));
+    return () => { timers.forEach((id) => window.clearTimeout(id)); };
+  }, [introPhase]);
+  function maybeStartSwipeCoach() {
+    if (localStorage.getItem(SWIPE_COACH_KEY)) return;
+    // Defer until after the chat modal unmounts so the feed coach isn’t swallowed.
+    window.setTimeout(() => {
+      if (localStorage.getItem(SWIPE_COACH_KEY)) return;
+      setPendingSwipeCoach(true);
+    }, 120);
+  }
+  function dismissSwipeCoach() {
+    // Only complete after the coach is actually visible — never kill a pending show.
+    if (!swipeCoachActive) return;
+    localStorage.setItem(SWIPE_COACH_KEY, '1');
+    setSwipeCoachActive(false);
+    setPendingSwipeCoach(false);
+  }
+  function closeAuraChat() {
+    setInterestOpen(false);
+    setChatStagedEnter(false);
+    if (introPhase !== 'off') setIntroPhase('done');
+    maybeStartSwipeCoach();
+  }
   function spawnAuraPoints(
     themeId: InterestCategoryId,
     direction: 'up' | 'down',
@@ -542,6 +689,42 @@ export function AuraFeed({ variant = 'current' }: { variant?: 'current' | 'glass
     }
     return result;
   }, [activeCategory, profile, sectionPool, search, live.demo]);
+  const spotlightPostId = swipeCoachActive ? visiblePosts[0]?.id : undefined;
+  useEffect(() => {
+    if (!pendingSwipeCoach || interestOpen || swipeCoachActive) return;
+    if (localStorage.getItem(SWIPE_COACH_KEY)) {
+      setPendingSwipeCoach(false);
+      return;
+    }
+    const loading = (section === 'discover' && live.discoverLoading)
+      || (section === 'feed' && live.feedLoading);
+    if (loading) return;
+    if (!visiblePosts.length) {
+      // After profile apply we land on For you — wait for that feed instead of jumping away.
+      if (section !== 'feed' && (posts.length || !live.feedLoading)) {
+        setSection('feed');
+        setActiveCategory('all');
+      }
+      return;
+    }
+    setSwipeCoachActive(true);
+    setPendingSwipeCoach(false);
+  }, [
+    pendingSwipeCoach,
+    interestOpen,
+    swipeCoachActive,
+    visiblePosts.length,
+    section,
+    live.discoverLoading,
+    live.feedLoading,
+    live.discoverPosts.length,
+    posts.length,
+  ]);
+  useEffect(() => {
+    if (!swipeCoachActive || !spotlightPostId) return;
+    const card = document.querySelector('.post-card.swipe-spotlight');
+    card?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  }, [swipeCoachActive, spotlightPostId]);
   function notify(message: string) { setToast(message); if (toastTimer.current) window.clearTimeout(toastTimer.current); toastTimer.current=window.setTimeout(() => setToast(''),2200); }
   function feedback(post: FeedPost, direction: FeedbackDirection, origin: DOMRect) {
     if (live.demo) {
@@ -553,6 +736,7 @@ export function AuraFeed({ variant = 'current' }: { variant?: 'current' | 'glass
     setProfile(current => ({ ...current,vector:adjustInterestVector(current.vector,post.category,vectorDir) }));
     spawnAuraPoints(post.category, vectorDir, origin);
     const label=themeMeta(post.category).shortLabel; notify(direction==='resonate'?`+${AURA_POINT_STEP} Aura · more ${label}`:`−${AURA_POINT_STEP} Aura · less ${label}`);
+    dismissSwipeCoach();
   }
   function toggleSaved(post: FeedPost) {
     const was=savedIds.includes(post.id), next=was?savedIds.filter(id=>id!==post.id):[...savedIds,post.id];
@@ -618,7 +802,33 @@ export function AuraFeed({ variant = 'current' }: { variant?: 'current' | 'glass
     ? 'More like this'
     : section==='saved'?'Your collection':section==='discover'?'Explore the signal':'For you';
   const avatarLabel = live.demo ? 'AM' : shortUserLabel(live.userId);
-  return <div className={`aura-app ${variant === 'glass' ? 'aura-glass' : 'aura-current'}`}>
+  const showSwipeCoach = swipeCoachActive && !interestOpen;
+  const introActive = introPhase === 'brand' || introPhase === 'rise' || introPhase === 'modal';
+  const revealChatCoach = introPhase === 'done' || introPhase === 'off';
+  return <div className={`aura-app ${variant === 'glass' ? 'aura-glass' : 'aura-current'}${showSwipeCoach ? ' feed-swipe-coaching' : ''}${introActive ? ` aura-intro-active aura-intro-phase-${introPhase}` : ''}`}>
+    {introActive && createPortal(
+      <div
+        ref={introRef}
+        className={`aura-intro aura-intro-phase-${introPhase}${variant === 'glass' ? ' aura-intro-glass' : ''}`}
+        role={introPhase === 'brand' ? 'dialog' : undefined}
+        aria-modal={introPhase === 'brand' ? true : undefined}
+        aria-labelledby={introPhase === 'brand' ? 'aura-intro-title' : undefined}
+        aria-hidden={introPhase === 'brand' ? undefined : true}
+      >
+        <div className="aura-intro-brand">
+          <span className="brand-mark aura-intro-mark"><span/><i/></span>
+          <span className="brand-name aura-intro-name" id="aura-intro-title">aura<span>.</span></span>
+        </div>
+        {introPhase === 'brand' && (
+          <button type="button" className="aura-intro-scroll-hint" onClick={beginIntroRise}>
+            <span>Scroll to begin</span>
+            <ArrowDown size={14} aria-hidden="true"/>
+          </button>
+        )}
+      </div>,
+      document.body,
+    )}
+    <div className="aura-intro-scroll-layer">
     <header className="topbar"><a className="brand" href="#" aria-label="Aura home" onClick={event=>{event.preventDefault();chooseSection('feed');}}><span className="brand-mark"><span/><i/></span><span className="brand-name">aura<span>.</span></span></a>
       {variant === 'glass' ? <button ref={profileNavRef} className={`interest-prompt-button glass-profile-trigger ${navHit ? `profile-nav-hit-${navHit}` : ''}`} aria-label="Open Interest DNA profile" aria-haspopup="dialog" aria-expanded={profilePopoverOpen} aria-controls="glass-profile-popover" onClick={()=>setProfilePopoverOpen(open=>!open)}><span className="prompt-spark"><Sparkles size={14}/></span><span className="prompt-button-copy"><small>YOUR PROFILE</small><strong>Interest DNA · {themes.length} themes</strong></span><span className="prompt-edit">{profilePopoverOpen ? 'CLOSE' : 'VIEW'} <ArrowDown size={11}/></span></button> :
       <button ref={profileNavRef} className={`interest-prompt-button ${navHit ? `profile-nav-hit-${navHit}` : ''}`} onClick={()=>setInterestOpen(true)}><span className="prompt-spark"><Sparkles size={14}/></span><span className="prompt-button-copy"><small>CHAT WITH AURA</small><strong>{profile.prompt}</strong></span><span className="prompt-edit">TUNE <ArrowRight size={11}/></span></button>}
@@ -632,9 +842,10 @@ export function AuraFeed({ variant = 'current' }: { variant?: 'current' | 'glass
       <button className="rail-create-card" onClick={()=>setComposerOpen(true)}><span className="rail-create-icon"><Plus size={16}/></span><strong>Make something</strong><small>A thought, a story, a link.</small></button><div className="rail-footer"><span className="rail-status-dot"/> A quieter corner of the internet.</div></aside>
       <main className="feed-main"><div className="feed-topline"><div className="feed-heading"><span className="eyebrow"><span className="live-dot"/> {live.similarResults ? 'SIMILARITY' : section==='discover' ? 'DISCOVER' : 'PERSONALIZED FOR YOU'}</span><h1>{sectionTitle}<span>.</span></h1><p>{live.similarResults ? <button className="text-action" onClick={() => live.clearSimilar()}>Clear similar · back to feed</button> : section==='saved'?'The posts you wanted to keep close.':section==='discover'?'Popular and recent posts across the corpus.':'A little less noise. A lot more you.'}</p></div><div className="feed-toolbar"><button className="filter-button" onClick={()=>setInterestOpen(true)}><Waves size={14}/><span>Chat with Aura</span><ArrowDown size={12}/></button><span className="feed-count"><b>{String(visiblePosts.length).padStart(2,'0')}</b> posts</span></div></div>
         <div className="feed-filter-row"><button className={`filter-chip ${activeCategory==='all'?'active':''}`} onClick={()=>setActiveCategory('all')}>All signals</button>{filterThemes.map(category=><button className={`filter-chip ${categoriesMatch(activeCategory, category.id)?'active':''}`} key={themeKey(category.id)} onClick={()=>setActiveCategory(categoriesMatch(activeCategory, category.id)?'all':category.id)}><i style={{backgroundColor:categoryAccent(category.id, variant)}}/>{category.shortLabel}</button>)}</div>
-         {(section==='feed' && live.feedLoading) || (section==='discover' && live.discoverLoading) ? <div className="empty-state"><span className="empty-state-icon"><Sparkles size={22}/></span><h2>{section==='discover'?'Scanning the corpus…':'Tuning your feed…'}</h2><p>Loading recommendations.</p></div> : visiblePosts.length ? <div className="masonry-feed">{visiblePosts.map(post=><PostCard key={post.id} post={post} profile={profile} variant={variant} why={live.whyById[post.id]} onFeedback={feedback} saved={savedIds.includes(post.id)} onToggleSaved={toggleSaved} onSimilar={showSimilar}/>)}{section!=='saved'&&!live.similarResults&&<button className="feed-end-card" onClick={()=>chooseSection('discover')}><span className="end-card-icon"><Sparkles size={16}/></span><span><strong>Keep following your curiosity.</strong><small>Explore more posts in your orbit.</small></span><ArrowRight size={16}/></button>}</div> : <div className="empty-state"><span className="empty-state-icon"><Bookmark size={22}/></span><h2>{section==='saved'?'Nothing saved yet.': live.feedError ? 'Could not reach the recommendation API.' : 'No posts in this signal.'}</h2><p>{section==='saved'?'Save a post to keep it in your collection.': live.feedError ? 'Start scraper serve + api-server, or set VITE_USE_DEMO=1.' : 'Chat with Aura to reshape your signal.'}</p><button className="button button-secondary" onClick={()=>section==='saved'?chooseSection('feed'):setInterestOpen(true)}>{section==='saved'?'Back to your feed':'Chat with Aura'}</button></div>}
+         {(section==='feed' && live.feedLoading) || (section==='discover' && live.discoverLoading) ? <div className="empty-state"><span className="empty-state-icon"><Sparkles size={22}/></span><h2>{section==='discover'?'Scanning the corpus…':'Tuning your feed…'}</h2><p>Loading recommendations.</p></div> : visiblePosts.length ? <div className="masonry-feed">{visiblePosts.map(post=><PostCard key={post.id} post={post} profile={profile} variant={variant} why={live.whyById[post.id]} onFeedback={feedback} saved={savedIds.includes(post.id)} onToggleSaved={toggleSaved} onSimilar={showSimilar} spotlight={showSwipeCoach && post.id === spotlightPostId}/>)}{section!=='saved'&&!live.similarResults&&<button className="feed-end-card" onClick={()=>chooseSection('discover')}><span className="end-card-icon"><Sparkles size={16}/></span><span><strong>Keep following your curiosity.</strong><small>Explore more posts in your orbit.</small></span><ArrowRight size={16}/></button>}</div> : <div className="empty-state"><span className="empty-state-icon"><Bookmark size={22}/></span><h2>{section==='saved'?'Nothing saved yet.': live.feedError ? 'Could not reach the recommendation API.' : 'No posts in this signal.'}</h2><p>{section==='saved'?'Save a post to keep it in your collection.': live.feedError ? 'Start scraper serve + api-server, or set VITE_USE_DEMO=1.' : 'Chat with Aura to reshape your signal.'}</p><button className="button button-secondary" onClick={()=>section==='saved'?chooseSection('feed'):setInterestOpen(true)}>{section==='saved'?'Back to your feed':'Chat with Aura'}</button></div>}
          {variant === 'current' && <div className="mobile-interest-card"><InterestPanel profile={profile} themes={themes} variant={variant} pointBurst={pointBurst} onEdit={()=>setInterestOpen(true)}/></div>}
        </main><div className="right-rail"><InterestPanel profile={profile} themes={themes} variant={variant} pointBurst={pointBurst} onEdit={()=>setInterestOpen(true)}/><div className="signal-tip"><div className="tip-heading"><span><Sparkles size={12}/></span> A small reminder</div><p>Chat with <b>Aura</b> to reshape your DNA, or use a quick <b>resonate</b> / <b>banish</b> while you browse.</p><button onClick={()=>setInterestOpen(true)}>Talk to Aura <ArrowRight size={12}/></button></div><div className="footer-links"><span>AURA · EARLY ACCESS</span><span>Made for curiosity <span className="tiny-heart">✳</span></span></div></div></div>
+    </div>
     <div className="aura-fly-layer" aria-hidden="true">
       {flyBursts.map((burst) => (
         <div key={burst.id} className="aura-fly-packet">
@@ -670,14 +881,33 @@ export function AuraFeed({ variant = 'current' }: { variant?: 'current' | 'glass
       ))}
     </div>
      <nav className="mobile-nav" aria-label="Mobile navigation"><button className={section==='feed'?'active':''} onClick={()=>chooseSection('feed')}><House size={19}/><span>Feed</span></button><button className={section==='discover'?'active':''} onClick={()=>chooseSection('discover')}><Compass size={19}/><span>Explore</span></button><button className="mobile-compose" onClick={()=>setComposerOpen(true)} aria-label="Create post"><Plus size={21}/></button><button className={section==='saved'?'active':''} onClick={()=>chooseSection('saved')}><Bookmark size={19}/><span>Saved</span></button><button className={variant === 'glass' ? 'glass-profile-trigger' : ''} aria-label={variant === 'glass' ? 'Open Interest DNA profile' : 'Chat with Aura'} aria-haspopup={variant === 'glass' ? 'dialog' : undefined} aria-expanded={variant === 'glass' ? profilePopoverOpen : undefined} onClick={()=>variant === 'glass' ? setProfilePopoverOpen(open=>!open) : setInterestOpen(true)}><Waves size={19}/><span>Aura</span></button></nav>
-     {interestOpen&&<AuraChatModal themes={themes} variant={variant} talkToAura={live.talkToAura} onClose={()=>setInterestOpen(false)} onApply={async (next, turn, chatMessages) => {
+     {interestOpen&&<AuraChatModal themes={themes} variant={variant} talkToAura={live.talkToAura} revealCoach={revealChatCoach} stagedEnter={chatStagedEnter} onClose={closeAuraChat} onApply={async (next, turn, chatMessages) => {
        const applied = await live.applyAuraProfile(turn, chatMessages, themes.map((t) => t.label || t.id));
        const profileToUse = applied ?? next;
        setProfile(profileToUse);
        localStorage.setItem(AURA_CHAT_KEY, '1');
        setInterestOpen(false);
+       setChatStagedEnter(false);
+       if (introPhase !== 'off') setIntroPhase('done');
+       live.clearSimilar();
+       setSection('feed');
+       setActiveCategory('all');
+       setSearch('');
+       maybeStartSwipeCoach();
        notify(live.demo ? 'Aura updated your Interest DNA' : 'Aura tuned your feed — refreshing');
-     }}/>}{composerOpen&&<ComposerModal variant={variant} live={!live.demo} onClose={()=>setComposerOpen(false)} onPublish={addPost}/>}{pairOpen&&pairPosts&&<PairModal variant={variant} left={pairPosts[0]} right={pairPosts[1]} onClose={()=>{setPairOpen(false);setPairPosts(null);}} onPick={(winner,loser)=>{void pickPair(winner,loser);}}/>}
+     }}/>}
+    {showSwipeCoach && (
+      <>
+        <div className="feed-swipe-coach-backdrop" aria-hidden="true"/>
+        <div className="feed-swipe-coach-tip" role="dialog" aria-labelledby="swipe-coach-title" aria-modal="false">
+          <span className="eyebrow">SHAPE YOUR SIGNAL</span>
+          <p id="swipe-coach-title">Swipe right to resonate, left to banish. Each one nudges your Interest DNA — your feed learns as you go.</p>
+          <small>Or use the Resonate / Banish buttons on the card.</small>
+          <button type="button" className="button button-secondary" onClick={dismissSwipeCoach}>Got it</button>
+        </div>
+      </>
+    )}
+    {composerOpen&&<ComposerModal variant={variant} live={!live.demo} onClose={()=>setComposerOpen(false)} onPublish={addPost}/>}{pairOpen&&pairPosts&&<PairModal variant={variant} left={pairPosts[0]} right={pairPosts[1]} onClose={()=>{setPairOpen(false);setPairPosts(null);}} onPick={(winner,loser)=>{void pickPair(winner,loser);}}/>}
     {toast&&<div className="toast-message"><span className="toast-dot"/>{toast}</div>}
   </div>;
 }

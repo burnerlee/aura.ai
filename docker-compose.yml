@@ -35,7 +35,7 @@ services:
       start_period: 20s
 
   qdrant:
-    image: qdrant/qdrant:v1.13.2
+    image: qdrant/qdrant:v1.14.1
     container_name: content-scraper-qdrant
     restart: unless-stopped
     ports:
@@ -44,10 +44,11 @@ services:
     volumes:
       - qdrant_data:/qdrant/storage
     healthcheck:
+      # /readyz returns plain text like "all shards are ready" (not "ok").
       test:
         [
           "CMD-SHELL",
-          "bash -c 'exec 3<>/dev/tcp/127.0.0.1/6333 && echo -e \"GET /readyz HTTP/1.0\\r\\n\\r\\n\" >&3 && cat <&3 | grep -q ok'",
+          "bash -c 'exec 3<>/dev/tcp/127.0.0.1/6333 && printf \"GET /readyz HTTP/1.0\\r\\n\\r\\n\" >&3 && cat <&3 | grep -qi ready'",
         ]
       interval: 10s
       timeout: 5s

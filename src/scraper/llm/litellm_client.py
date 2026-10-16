@@ -128,8 +128,7 @@ class LiteLLMClient:
                 model=self.settings.litellm_llm_model,
                 messages=messages,
                 response_format={"type": "json_object"},
-                # Reasoning models (e.g. gemini-3.8-flash) spend tokens on thoughts.
-                max_tokens=4096,
+                max_tokens=2048,
                 **self._completion_kwargs(),
             )
         text = response.choices[0].message.content or "{}"
