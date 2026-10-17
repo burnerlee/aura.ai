@@ -47,6 +47,7 @@ from scraper.profile.dna import (
     confidence_scale,
     humanize,
     import_vector,
+    label_for_key,
     reconcile,
     seed_dna,
 )
@@ -87,10 +88,25 @@ _DNA_EVENTS = frozenset(
     {EventType.LIKE, EventType.SAVE, EventType.NOT_INTERESTED, EventType.PAIRWISE}
 )
 _MINING_WINDOW = 200  # most recent reactions considered when mining patterns
+# Stated interests: the persona summary, the topics the user named, and the DNA themes.
+_PERSONA_QUERY_WEIGHT = 0.35
+_TOPIC_QUERY_COUNT = 4
+_TOPIC_QUERY_WEIGHT = 0.4
 _DNA_QUERY_THEMES = 4  # top DNA themes that also act as retrieval queries
-_DNA_QUERY_WEIGHT = 0.3  # their combined weight next to state / centroids / persona
+_DNA_QUERY_WEIGHT = 0.25
+# Each like shifts this much of the query weight from stated interests to behaviour.
+_BEHAVIOUR_SHARE_PER_LIKE = 0.08
+_MAX_BEHAVIOUR_SHARE = 0.6
 _INSIGHT_LIKED = 30  # most recent liked / skipped posts a "why this" can point back to
 _INSIGHT_SKIPPED = 20
+
+
+def _scaled(vectors: list[QueryVector], share: float) -> list[QueryVector]:
+    """Rescale a group's weights so they sum to ``share``."""
+    total = sum(v.weight for v in vectors)
+    if share <= 0 or total <= 0:
+        return []
+    return [v.model_copy(update={"weight": v.weight / total * share}) for v in vectors]
 
 
 @dataclass
@@ -135,6 +151,7 @@ class UserProfileService:
             client=self._indexing,
             settings=self.settings,
         )
+        self._theme_vectors: dict[str, list[float]] = {}
 
     @property
     def client(self) -> LLMClient:
@@ -501,6 +518,28 @@ class UserProfileService:
         self.save(profile)
         return profile
 
+    def reset(self, user_id: str) -> UserProfile:
+        """Forget everything learned about the user; the account link itself survives."""
+        self.store.interactions.delete_many({"user_id": user_id})
+        profile = UserProfile(user_id=user_id)
+        self.store.users.replace_one({"user_id": user_id}, profile.to_mongo(), upsert=True)
+        return profile
+
+    def rebuild_vectors(self, user_id: str) -> UserProfile:
+        """Recompute every user-side vector from the current corpus embedding model."""
+        profile = self.get_or_create(user_id)
+        summary = profile.persona.summary or "; ".join(profile.persona.topics)
+        profile.persona_vector = self.client.embed_query(summary) if summary else None
+        positives = [v for pid in profile.positive_ids[-50:] if (v := self._doc_vector(pid))]
+        profile.state_vector = update_state(positives, liked=False)
+        profile.interest_centroids = (
+            compute_centroids(positives, k=self.settings.interest_centroid_k)
+            if positives
+            else []
+        )
+        self.save(profile)
+        return profile
+
     def _stored_aura_messages(self, profile: UserProfile) -> list[AuraChatMessage]:
         return [
             AuraChatMessage(role=m.role, content=m.content)
@@ -586,11 +625,32 @@ class UserProfileService:
             llm=llm,
             fallback_llm=fallback_llm,
             prior_messages=prior,
+            current_profile=self._describe_profile(profile),
         )
         profile = self._persist_aura_conversation(profile, messages, turn.message)
-        if apply and turn.ready and turn.profile is not None:
+        # A ready turn always retunes the feed, so a chat edit takes effect without
+        # an extra "apply" step.
+        if turn.ready and turn.profile is not None:
             profile = self.apply_aura_profile(user_id, turn.profile)
         return turn, profile
+
+    def _describe_profile(self, profile: UserProfile) -> str | None:
+        """Plain-text summary of the current persona + DNA for Aura's prompt."""
+        persona = profile.persona
+        dna = profile.dna
+        if not (persona.summary or dna.weights):
+            return None
+        themes = ", ".join(
+            f"{label_for_key(key, dna.labels, None)} {weight:.0f}%"
+            for key, weight in sorted(dna.weights.items(), key=lambda kv: -kv[1])[:8]
+        )
+        avoid = ", ".join(r.label or r.key for r in dna.anti[:8])
+        lines = [
+            f"summary: {persona.summary}" if persona.summary else "",
+            f"themes: {themes}" if themes else "",
+            f"avoiding: {avoid}" if avoid else "",
+        ]
+        return "\n".join(line for line in lines if line)
 
     def _vocabulary_themes(self) -> list[str]:
         try:
@@ -615,8 +675,8 @@ class UserProfileService:
                 persona.summary or "; ".join(persona.topics) or "curious reader"
             )
         except Exception as exc:  # noqa: BLE001
-            logger.warning("Aura profile embed failed (%s); empty vector", exc)
-            vector = []
+            logger.warning("Aura profile embed failed (%s); keeping previous vector", exc)
+            vector = profile.persona_vector
         profile.persona = persona
         profile.persona_vector = vector
         profile.persona_version += 1
@@ -654,70 +714,125 @@ class UserProfileService:
         return profile
 
     def build_query_set(self, profile: UserProfile) -> QuerySet:
-        vectors: list[QueryVector] = []
+        """Blend what the user told Aura with what they reacted to.
+
+        Stated interests (persona + DNA themes) lead until enough likes exist to
+        trust behaviour; one like must never drown out a whole conversation.
+        """
+        behaviour: list[QueryVector] = []
         if profile.state_vector:
-            vectors.append(
+            behaviour.append(
                 QueryVector(
                     vector=profile.state_vector,
-                    weight=0.35,
+                    weight=0.45,
                     kind=QueryKind.STATE,
                     label="state",
                 )
             )
-        centroids = profile.interest_centroids
-        if centroids:
-            for c in centroids:
-                vectors.append(
-                    QueryVector(
-                        vector=c.vector,
-                        weight=0.4 * c.weight,
-                        kind=QueryKind.CENTROID,
-                        label=c.label or "centroid",
-                    )
-                )
-        if profile.persona_vector:
-            vectors.append(
+        for c in profile.interest_centroids:
+            behaviour.append(
                 QueryVector(
-                    vector=profile.persona_vector,
-                    weight=0.25,
+                    vector=c.vector,
+                    weight=0.55 * c.weight,
+                    kind=QueryKind.CENTROID,
+                    label=c.label or "centroid",
+                )
+            )
+
+        stated: list[QueryVector] = []
+        persona_vector = profile.persona_vector
+        if not persona_vector and profile.persona.summary:
+            persona_vector = self.client.embed_query(profile.persona.summary)
+        if persona_vector:
+            stated.append(
+                QueryVector(
+                    vector=persona_vector,
+                    weight=_PERSONA_QUERY_WEIGHT,
                     kind=QueryKind.PERSONA,
                     label="persona",
                 )
             )
-        vectors.extend(self._dna_query_vectors(profile))
-        # Cold start: embed persona summary topics as content query
-        if not vectors and profile.persona.summary:
-            vec = self.client.embed_query(profile.persona.summary)
-            vectors.append(
-                QueryVector(vector=vec, weight=1.0, kind=QueryKind.PERSONA, label="persona")
-            )
-        return QuerySet(vectors=vectors)
+        stated.extend(self._topic_query_vectors(profile))
+        stated.extend(self._dna_query_vectors(profile))
+
+        likes = len(profile.positive_ids)
+        behaviour_share = min(_MAX_BEHAVIOUR_SHARE, _BEHAVIOUR_SHARE_PER_LIKE * likes)
+        if not stated:
+            behaviour_share = 1.0
+        elif not behaviour:
+            behaviour_share = 0.0
+        return QuerySet(
+            vectors=[
+                *_scaled(behaviour, behaviour_share),
+                *_scaled(stated, 1.0 - behaviour_share),
+            ]
+        )
+
+    def _theme_vector(self, label: str) -> list[float] | None:
+        """Embedding for a DNA theme the corpus vocabulary does not know yet."""
+        key = label.strip().lower()
+        if not key:
+            return None
+        if key not in self._theme_vectors:
+            try:
+                self._theme_vectors[key] = self.client.embed_query(label)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("Could not embed DNA theme %r (%s)", label, exc)
+                return None
+        return self._theme_vectors[key]
+
+    def _topic_query_vectors(self, profile: UserProfile) -> list[QueryVector]:
+        """The specific topics the user named to Aura, as retrieval queries.
+
+        DNA themes are coarse corpus buckets ("neuroscience" lands in Health & Wellness);
+        the user's own words keep retrieval as specific as they were.
+        """
+        topics = [t for t in profile.persona.topics if t.strip()][:_TOPIC_QUERY_COUNT]
+        ranked = [(t, 1.0 - 0.15 * i) for i, t in enumerate(topics)]
+        total = sum(w for _, w in ranked) or 1.0
+        out: list[QueryVector] = []
+        for topic, weight in ranked:
+            vector = self._theme_vector(topic)
+            if vector:
+                out.append(
+                    QueryVector(
+                        vector=vector,
+                        weight=_TOPIC_QUERY_WEIGHT * weight / total,
+                        kind=QueryKind.THEME,
+                        label=topic,
+                    )
+                )
+        return out
 
     def _dna_query_vectors(self, profile: UserProfile) -> list[QueryVector]:
         """The user's top Interest DNA themes as retrieval queries.
 
         This is what makes the DNA the user sees the DNA that ranks: each top theme
-        contributes its centroid, weighted by its share. Custom themes (no corpus
-        theme yet) have no vector and are skipped.
+        contributes its centroid (or, for a custom theme, its label's embedding),
+        weighted by its share.
         """
         if not profile.dna.weights:
             return []
         resolver = self._resolver(embed=False)
-        if resolver is None:
-            return []
         top = sorted(profile.dna.weights.items(), key=lambda kv: -kv[1])[:_DNA_QUERY_THEMES]
         total = sum(weight for _, weight in top) or 1.0
         out: list[QueryVector] = []
         for key, weight in top:
-            tag = resolver.by_id(key)
-            if tag is None or not tag.embedding:
+            tag = resolver.by_id(key) if resolver is not None else None
+            if tag is not None:
+                label = tag.label
+                vector = tag.embedding or self._theme_vector(label)
+            else:
+                label = label_for_key(key, profile.dna.labels, None)
+                vector = self._theme_vector(label)
+            if not vector:
                 continue
             out.append(
                 QueryVector(
-                    vector=tag.embedding,
+                    vector=vector,
                     weight=_DNA_QUERY_WEIGHT * weight / total,
                     kind=QueryKind.THEME,
-                    label=tag.label,
+                    label=label,
                 )
             )
         return out
@@ -846,3 +961,111 @@ class UserProfileService:
             picked = self.engine.recommend(qs, k=1, exclude_ids=profile.seen_ids)
             results.extend(picked)
         return results[:2]
+
+    def merge_profiles(self, *, from_user_id: str, to_user_id: str) -> UserProfile:
+        """Merge one user's state into another, recomputing derived vectors.
+
+        Used when an anonymous session signs in and becomes an account.
+        """
+        if not from_user_id or not to_user_id or from_user_id == to_user_id:
+            return self.get_or_create(to_user_id or from_user_id or "anonymous")
+
+        src = self.get_or_create(from_user_id)
+        dst = self.get_or_create(to_user_id)
+
+        def _dedupe(items: list[str]) -> list[str]:
+            seen: set[str] = set()
+            out: list[str] = []
+            for item in items:
+                if not item:
+                    continue
+                if item in seen:
+                    continue
+                seen.add(item)
+                out.append(item)
+            return out
+
+        # Merge raw id lists (preserve dst ordering, append src extras).
+        dst.seen_ids = _dedupe(dst.seen_ids + src.seen_ids)
+        dst.exclude_near_ids = _dedupe(dst.exclude_near_ids + src.exclude_near_ids)
+        dst.positive_ids = _dedupe(dst.positive_ids + src.positive_ids)
+        dst.negative_ids = _dedupe(dst.negative_ids + src.negative_ids)
+
+        # Merge persona hints / controls.
+        dst.persona.muted_authors = _dedupe(
+            list(dst.persona.muted_authors) + list(src.persona.muted_authors)
+        )
+        dst.persona.muted_sources = _dedupe(
+            list(dst.persona.muted_sources) + list(src.persona.muted_sources)
+        )
+        if not (dst.persona.summary or "").strip() and (src.persona.summary or "").strip():
+            dst.persona = src.persona
+            dst.persona_vector = src.persona_vector
+        elif dst.persona_vector is None and src.persona_vector is not None:
+            dst.persona_vector = src.persona_vector
+
+        # Merge Aura memory (keep bounded).
+        if src.aura_conversation:
+            merged = list(dst.aura_conversation) + list(src.aura_conversation)
+            dst.aura_conversation = merged[-MAX_STORED_MESSAGES:]
+
+        # Merge Interest DNA (server-owned weights + rules).
+        if getattr(dst, "dna", None) is not None and getattr(src, "dna", None) is not None:
+            if dst.dna.version <= 0 and src.dna.version > 0:
+                dst.dna = src.dna
+            else:
+                # Weights/labels: keep dst as authoritative, but fill in anything missing from src.
+                for key, value in (src.dna.weights or {}).items():
+                    if key not in dst.dna.weights:
+                        dst.dna.weights[key] = value
+                for key, value in (src.dna.labels or {}).items():
+                    if key not in dst.dna.labels:
+                        dst.dna.labels[key] = value
+                if not (dst.dna.prompt or "").strip() and (src.dna.prompt or "").strip():
+                    dst.dna.prompt = src.dna.prompt
+
+                def _rule_key(rule: Any) -> str:
+                    kind = getattr(rule, "kind", "") or ""
+                    rkey = getattr(rule, "key", "") or ""
+                    return f"{kind}:{rkey}"
+
+                existing_anti = {_rule_key(r): r for r in dst.dna.anti}
+                for r in src.dna.anti:
+                    existing_anti.setdefault(_rule_key(r), r)
+                dst.dna.anti = list(existing_anti.values())
+
+                existing_aff = {_rule_key(r): r for r in dst.dna.affinities}
+                for r in src.dna.affinities:
+                    existing_aff.setdefault(_rule_key(r), r)
+                dst.dna.affinities = list(existing_aff.values())
+
+                dst.dna.dismissed = _dedupe(list(dst.dna.dismissed) + list(src.dna.dismissed))
+                dst.dna.version = max(dst.dna.version, src.dna.version) + 1
+                dst.dna.updated_at = datetime.now(UTC)
+
+        # Recompute derived vectors from the merged positive set.
+        positives: list[list[float]] = []
+        for pid in dst.positive_ids[-50:]:
+            vec = self._doc_vector(pid)
+            if vec:
+                positives.append(vec)
+        if positives:
+            dst.state_vector = update_state(positives, liked=False, new_item=None)
+            dst.interest_centroids = compute_centroids(
+                positives, k=self.settings.interest_centroid_k
+            )
+
+        # Best-effort: migrate interactions history so persona refresh keeps context.
+        try:
+            self.store.interactions.update_many(
+                {"user_id": from_user_id},
+                {"$set": {"user_id": to_user_id}},
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("Interaction migration failed (%s -> %s): %s", from_user_id, to_user_id, exc)
+
+        # Advance persona version to signal a state change.
+        dst.persona_version = max(dst.persona_version, src.persona_version) + 1
+        dst.interaction_count_since_persona = 0
+        self.save(dst)
+        return dst
