@@ -788,6 +788,16 @@ export const GetUserProfileResponse = zod.record(zod.string(), zod.unknown())
 
 
 /**
+ * @summary Forget everything learned about this user (DNA, persona, reactions, Aura memory)
+ */
+export const ResetUserProfileParams = zod.object({
+  "userId": zod.coerce.string().describe('Client-owned anonymous or auth user id')
+})
+
+export const ResetUserProfileResponse = zod.record(zod.string(), zod.unknown())
+
+
+/**
  * @summary Onboard a user with free text and/or seed posts
  */
 export const OnboardUserParams = zod.object({

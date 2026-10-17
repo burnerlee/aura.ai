@@ -307,6 +307,22 @@ paths:
                 type: object
                 additionalProperties: true
 
+  /users/{userId}/profile/reset:
+    post:
+      operationId: resetUserProfile
+      tags: [users]
+      summary: Forget everything learned about this user (DNA, persona, reactions, Aura memory)
+      parameters:
+        - $ref: "#/components/parameters/UserId"
+      responses:
+        "200":
+          description: Reset acknowledged
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+
   /users/{userId}/onboard:
     post:
       operationId: onboardUser

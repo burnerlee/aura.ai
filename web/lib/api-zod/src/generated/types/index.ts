@@ -59,6 +59,7 @@ export * from './onboardRequest';
 export * from './persona';
 export * from './personaVersionResponse';
 export * from './postKind';
+export * from './resetUserProfile200';
 export * from './searchRequest';
 export * from './similarPostsParams';
 export * from './tag';

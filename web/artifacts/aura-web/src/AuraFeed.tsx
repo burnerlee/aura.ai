@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import {
   ArrowDown, ArrowRight, ArrowUpRight, Bookmark, Check, Compass, Heart,
   House, Link as LinkIcon, MessageCircle, Plus, Search, Sparkles, ThumbsDown,
-  Waves, X, FileText, PenLine, Code2, Image as ImageIcon, ExternalLink,
+  Waves, X, FileText, PenLine, Code2, Image as ImageIcon, ExternalLink, User,
 } from 'lucide-react';
 import {
   adjustInterestVector, CATEGORIES, DEMO_POSTS, DEMO_PROFILE, EMPTY_PROFILE, cardMatchPercent,
@@ -15,14 +15,15 @@ import {
   type InterestVector, type ServerDna, type ServerDnaRule, type ServerNoticed,
 } from '@workspace/aura-shared';
 import { LOCAL_PROFILE_KEY, useRecommendationFeed, type FeedbackInsight } from '@/hooks/use-recommendation-feed';
-import { shortUserId, shortUserLabel } from '@/lib/user-id';
+import { AccountMenu } from '@/components/AccountMenu';
+import { ProfileView } from '@/components/ProfileView';
 
 const AURA_CHAT_KEY = 'aura:chat-complete:v1';
 const SWIPE_COACH_KEY = 'aura:swipe-coach:v1';
 /** Matches the category step in adjustInterestVector. */
 const AURA_POINT_STEP = 7;
 
-type Section = 'feed' | 'discover' | 'saved';
+type Section = 'feed' | 'discover' | 'saved' | 'profile';
 type ComposerMode = 'short' | 'article' | 'embed';
 type DraftPost = Omit<FeedPost, 'id' | 'publishedAt' | 'likes' | 'comments'>;
 type AuraPointBurst = {
@@ -273,9 +274,12 @@ function AuraChatModal({
   talkToAura,
   revealCoach = true,
   stagedEnter = false,
+  autoApplied = false,
 }: {
   themes: CategoryMeta[];
   variant: 'current' | 'glass';
+  /** Ready turns are applied server-side as they arrive (live mode). */
+  autoApplied?: boolean;
   onClose: () => void;
   onApply: (profile: InterestProfile, turn: AuraTurn, messages: AuraChatMessage[]) => void | Promise<void>;
   talkToAura: (messages: AuraChatMessage[], knownThemes: string[], apply?: boolean) => Promise<AuraTurn>;
@@ -479,8 +483,8 @@ function AuraChatModal({
         {preview && turn?.ready && (
           <div className="aura-profile-preview">
             <div className="aura-profile-preview-head">
-              <span className="field-label">READY TO APPLY</span>
-              <span className="preview-caption">from your chat</span>
+              <span className="field-label">{autoApplied ? 'YOUR FEED IS RETUNED' : 'READY TO APPLY'}</span>
+              <span className="preview-caption">{autoApplied ? 'keep chatting to refine' : 'from your chat'}</span>
             </div>
             <p className="aura-profile-summary">“{preview.prompt}”</p>
             {!!topThemes.length && (
@@ -513,7 +517,7 @@ function AuraChatModal({
         <div className="modal-actions aura-chat-actions">
           <button className="button button-quiet" type="button" onClick={onClose}>Maybe later</button>
           <button className="button button-primary" type="button" disabled={!turn?.ready || !preview || applying} onClick={() => void applyProfile()}>
-            <Check size={15}/> {applying ? 'Applying…' : 'Apply to my feed'}
+            <Check size={15}/> {applying ? 'Applying…' : autoApplied ? 'See my feed' : 'Apply to my feed'}
           </button>
         </div>
       </div>
@@ -731,6 +735,7 @@ export function AuraFeed({ variant = 'current' }: { variant?: 'current' | 'glass
         .filter((post): post is FeedPost => Boolean(post));
     }
     if (section === 'discover') return live.demo ? posts : live.discoverPosts;
+    if (section === 'profile') return [];
     return posts;
   }, [live.similarResults, live.demo, live.searchResults, live.discoverPosts, search, section, savedIds, savedPosts, posts]);
   // DNA / Aura chat: all loaded content. Filter chips: only themes present in this section.
@@ -904,15 +909,28 @@ export function AuraFeed({ variant = 'current' }: { variant?: 'current' | 'glass
       notify('Showing more like this');
     } catch { notify('Similar lookup failed'); }
   }
-  function copyUserId() {
-    if (live.demo) { notify('Demo mode — no remote user id'); return; }
-    void navigator.clipboard?.writeText(live.userId);
-    notify(`User id ${shortUserId(live.userId)} copied`);
-  }
   const sectionTitle = live.similarResults
     ? 'More like this'
-    : section==='saved'?'Your collection':section==='discover'?'Explore the signal':'For you';
-  const avatarLabel = live.demo ? 'AM' : shortUserLabel(live.userId);
+    : section==='saved'?'Your collection':section==='discover'?'Explore the signal':section==='profile'?'Your profile':'For you';
+  async function resetProfile() {
+    try {
+      await live.resetProfile();
+      localStorage.removeItem(AURA_CHAT_KEY);
+      notify('Profile reset — tell Aura what you like');
+      setInterestOpen(true);
+    } catch { notify('Could not reset your profile'); }
+  }
+  const profileView = section === 'profile' && !live.similarResults
+    ? <ProfileView
+        userId={live.userId}
+        demo={live.demo}
+        dna={live.dna}
+        savedCount={savedIds.length}
+        onChat={() => setInterestOpen(true)}
+        onOpenSaved={() => chooseSection('saved')}
+        onReset={resetProfile}
+      />
+    : null;
   const showSwipeCoach = swipeCoachActive && !interestOpen;
   const introActive = introPhase === 'brand' || introPhase === 'rise' || introPhase === 'modal';
   const revealChatCoach = introPhase === 'done' || introPhase === 'off';
@@ -943,17 +961,17 @@ export function AuraFeed({ variant = 'current' }: { variant?: 'current' | 'glass
     <header className="topbar"><a className="brand" href="#" aria-label="Aura home" onClick={event=>{event.preventDefault();chooseSection('feed');}}><span className="brand-mark"><span/><i/></span><span className="brand-name">aura<span>.</span></span></a>
       {variant === 'glass' ? <button ref={profileNavRef} className={`interest-prompt-button glass-profile-trigger ${navHit ? `profile-nav-hit-${navHit}` : ''}`} aria-label="Open Interest DNA profile" aria-haspopup="dialog" aria-expanded={profilePopoverOpen} aria-controls="glass-profile-popover" onClick={()=>setProfilePopoverOpen(open=>!open)}><span className="prompt-spark"><Sparkles size={14}/></span><span className="prompt-button-copy"><small>YOUR PROFILE</small><strong>Interest DNA · {themes.length} themes</strong></span><span className="prompt-edit">{profilePopoverOpen ? 'CLOSE' : 'VIEW'} <ArrowDown size={11}/></span></button> :
       <button ref={profileNavRef} className={`interest-prompt-button ${navHit ? `profile-nav-hit-${navHit}` : ''}`} onClick={()=>setInterestOpen(true)}><span className="prompt-spark"><Sparkles size={14}/></span><span className="prompt-button-copy"><small>CHAT WITH AURA</small><strong>{profile.prompt}</strong></span><span className="prompt-edit">TUNE <ArrowRight size={11}/></span></button>}
-      <div className="topbar-actions"><button className={`icon-button top-search ${searchOpen?'active':''}`} aria-label="Search the feed" onClick={()=>setSearchOpen(open=>!open)}><Search size={18}/></button><button className="icon-button notification-button" aria-label="Open pairwise preference" title="Pairwise pick" onClick={()=>void openPair()}><Waves size={18}/></button><button className="button button-primary create-button" onClick={()=>setComposerOpen(true)}><Plus size={16} strokeWidth={2.5}/><span>Create</span></button><button className="user-avatar" aria-label={live.demo ? 'Demo profile' : `Copy user id ${live.userId}`} title={live.demo ? 'Demo user' : live.userId} onClick={copyUserId}>{avatarLabel}</button></div>
+      <div className="topbar-actions"><button className={`icon-button top-search ${searchOpen?'active':''}`} aria-label="Search the feed" onClick={()=>setSearchOpen(open=>!open)}><Search size={18}/></button><button className="icon-button notification-button" aria-label="Open pairwise preference" title="Pairwise pick" onClick={()=>void openPair()}><Waves size={18}/></button><button className="button button-primary create-button" onClick={()=>setComposerOpen(true)}><Plus size={16} strokeWidth={2.5}/><span>Create</span></button><AccountMenu demo={live.demo} onOpenProfile={()=>chooseSection('profile')}/></div>
     </header>
     {variant === 'glass' && profilePopoverOpen && <div className="glass-profile-popover" id="glass-profile-popover" ref={profilePopoverRef} role="dialog" aria-label="Interest DNA profile"><InterestPanel profile={profile} themes={themes} variant="glass" pointBurst={pointBurst} dna={live.dna} onRemoveRule={dropRule} onEdit={()=>{setProfilePopoverOpen(false);setInterestOpen(true);}}/></div>}
     {searchOpen && <div className="search-bar"><Search size={16}/><input autoFocus value={search} onChange={event=>setSearch(event.target.value)} placeholder="Search ideas, people, or topics..." aria-label="Search ideas, people, or topics"/><button onClick={()=>{setSearch('');setSearchOpen(false);}} aria-label="Close search">×</button></div>}
     <div className="workspace"><aside className="left-rail"><span className="eyebrow rail-label">YOUR SPACE</span><nav className="main-nav" aria-label="Main navigation">
-      <button className={section==='feed'?'active':''} onClick={()=>chooseSection('feed')}><House size={17}/><span>For you</span>{section==='feed'&&<i/>}</button><button className={section==='discover'?'active':''} onClick={()=>chooseSection('discover')}><Compass size={17}/><span>Discover</span>{section==='discover'&&<i/>}</button><button className={section==='saved'?'active':''} onClick={()=>chooseSection('saved')}><Bookmark size={17}/><span>Collection</span>{section==='saved'&&<i/>}</button></nav>
+      <button className={section==='feed'?'active':''} onClick={()=>chooseSection('feed')}><House size={17}/><span>For you</span>{section==='feed'&&<i/>}</button><button className={section==='discover'?'active':''} onClick={()=>chooseSection('discover')}><Compass size={17}/><span>Discover</span>{section==='discover'&&<i/>}</button><button className={section==='saved'?'active':''} onClick={()=>chooseSection('saved')}><Bookmark size={17}/><span>Collection</span>{section==='saved'&&<i/>}</button><button className={section==='profile'?'active':''} onClick={()=>chooseSection('profile')}><User size={17}/><span>Profile</span>{section==='profile'&&<i/>}</button></nav>
       <div className="rail-divider"/><div className="rail-section-heading"><span className="eyebrow">YOUR INTERESTS</span><button className="mini-edit" onClick={()=>setInterestOpen(true)} aria-label="Chat with Aura">+</button></div><div className="rail-categories">{filterThemes.map(category=><button className={`rail-category ${categoriesMatch(activeCategory, category.id)?'selected':''} ${pointBurst?.themeId===category.id ? ((pointBurst.delta>0)?'rail-hit-plus':'rail-hit-minus') : ''}`} key={themeKey(category.id)} onClick={()=>setActiveCategory(categoriesMatch(activeCategory, category.id)?'all':category.id)}><i style={{backgroundColor:categoryAccent(category.id, variant)}}/><span>{category.shortLabel}</span><small>{Math.round(profile.vector[category.id] ?? 0)}</small></button>)}</div>
       <button className="rail-create-card" onClick={()=>setComposerOpen(true)}><span className="rail-create-icon"><Plus size={16}/></span><strong>Make something</strong><small>A thought, a story, a link.</small></button><div className="rail-footer"><span className="rail-status-dot"/> A quieter corner of the internet.</div></aside>
-      <main className="feed-main"><div className="feed-topline"><div className="feed-heading"><span className="eyebrow"><span className="live-dot"/> {live.similarResults ? 'SIMILARITY' : section==='discover' ? 'DISCOVER' : 'PERSONALIZED FOR YOU'}</span><h1>{sectionTitle}<span>.</span></h1><p>{live.similarResults ? <button className="text-action" onClick={() => live.clearSimilar()}>Clear similar · back to feed</button> : section==='saved'?'The posts you wanted to keep close.':section==='discover'?'Popular and recent posts across the corpus.':'A little less noise. A lot more you.'}</p></div><div className="feed-toolbar"><button className="filter-button" onClick={()=>setInterestOpen(true)}><Waves size={14}/><span>Chat with Aura</span><ArrowDown size={12}/></button><span className="feed-count"><b>{String(visiblePosts.length).padStart(2,'0')}</b> posts</span></div></div>
-        <div className="feed-filter-row"><button className={`filter-chip ${activeCategory==='all'?'active':''}`} onClick={()=>setActiveCategory('all')}>All signals</button>{filterThemes.map(category=><button className={`filter-chip ${categoriesMatch(activeCategory, category.id)?'active':''}`} key={themeKey(category.id)} onClick={()=>setActiveCategory(categoriesMatch(activeCategory, category.id)?'all':category.id)}><i style={{backgroundColor:categoryAccent(category.id, variant)}}/>{category.shortLabel}</button>)}</div>
-         {(section==='feed' && live.feedLoading) || (section==='discover' && live.discoverLoading) ? <div className="empty-state"><span className="empty-state-icon"><Sparkles size={22}/></span><h2>{section==='discover'?'Scanning the corpus…':'Tuning your feed…'}</h2><p>Loading recommendations.</p></div> : visiblePosts.length ? <div className="masonry-feed">{visiblePosts.map(post=><PostCard key={post.id} post={post} profile={profile} demo={live.demo} variant={variant} why={live.whyById[post.id]} onFeedback={feedback} saved={savedIds.includes(post.id)} onToggleSaved={toggleSaved} onSimilar={showSimilar} spotlight={showSwipeCoach && post.id === spotlightPostId}/>)}{section!=='saved'&&!live.similarResults&&<button className="feed-end-card" onClick={()=>chooseSection('discover')}><span className="end-card-icon"><Sparkles size={16}/></span><span><strong>Keep following your curiosity.</strong><small>Explore more posts in your orbit.</small></span><ArrowRight size={16}/></button>}</div> : <div className="empty-state"><span className="empty-state-icon"><Bookmark size={22}/></span><h2>{section==='saved'?'Nothing saved yet.': live.feedError ? 'Could not reach the recommendation API.' : 'No posts in this signal.'}</h2><p>{section==='saved'?'Save a post to keep it in your collection.': live.feedError ? 'Start scraper serve + api-server, or set VITE_USE_DEMO=1.' : 'Chat with Aura to reshape your signal.'}</p><button className="button button-secondary" onClick={()=>section==='saved'?chooseSection('feed'):setInterestOpen(true)}>{section==='saved'?'Back to your feed':'Chat with Aura'}</button></div>}
+      <main className="feed-main"><div className="feed-topline"><div className="feed-heading"><span className="eyebrow"><span className="live-dot"/> {live.similarResults ? 'SIMILARITY' : section==='discover' ? 'DISCOVER' : section==='profile' ? 'YOU' : 'PERSONALIZED FOR YOU'}</span><h1>{sectionTitle}<span>.</span></h1><p>{live.similarResults ? <button className="text-action" onClick={() => live.clearSimilar()}>Clear similar · back to feed</button> : section==='saved'?'The posts you wanted to keep close.':section==='discover'?'Popular and recent posts across the corpus.':section==='profile'?'Everything your feed is tuned to, in one place.':'A little less noise. A lot more you.'}</p></div><div className="feed-toolbar"><button className="filter-button" onClick={()=>setInterestOpen(true)}><Waves size={14}/><span>Chat with Aura</span><ArrowDown size={12}/></button>{!profileView && <span className="feed-count"><b>{String(visiblePosts.length).padStart(2,'0')}</b> posts</span>}</div></div>
+        {profileView ?? <><div className="feed-filter-row"><button className={`filter-chip ${activeCategory==='all'?'active':''}`} onClick={()=>setActiveCategory('all')}>All signals</button>{filterThemes.map(category=><button className={`filter-chip ${categoriesMatch(activeCategory, category.id)?'active':''}`} key={themeKey(category.id)} onClick={()=>setActiveCategory(categoriesMatch(activeCategory, category.id)?'all':category.id)}><i style={{backgroundColor:categoryAccent(category.id, variant)}}/>{category.shortLabel}</button>)}</div>
+         {(section==='feed' && live.feedLoading) || (section==='discover' && live.discoverLoading) ? <div className="empty-state"><span className="empty-state-icon"><Sparkles size={22}/></span><h2>{section==='discover'?'Scanning the corpus…':'Tuning your feed…'}</h2><p>Loading recommendations.</p></div> : visiblePosts.length ? <div className="masonry-feed">{visiblePosts.map(post=><PostCard key={post.id} post={post} profile={profile} demo={live.demo} variant={variant} why={live.whyById[post.id]} onFeedback={feedback} saved={savedIds.includes(post.id)} onToggleSaved={toggleSaved} onSimilar={showSimilar} spotlight={showSwipeCoach && post.id === spotlightPostId}/>)}{section!=='saved'&&!live.similarResults&&<button className="feed-end-card" onClick={()=>chooseSection('discover')}><span className="end-card-icon"><Sparkles size={16}/></span><span><strong>Keep following your curiosity.</strong><small>Explore more posts in your orbit.</small></span><ArrowRight size={16}/></button>}</div> : <div className="empty-state"><span className="empty-state-icon"><Bookmark size={22}/></span><h2>{section==='saved'?'Nothing saved yet.': live.feedError ? 'Could not reach the recommendation API.' : 'No posts in this signal.'}</h2><p>{section==='saved'?'Save a post to keep it in your collection.': live.feedError ? 'Start scraper serve + api-server, or set VITE_USE_DEMO=1.' : 'Chat with Aura to reshape your signal.'}</p><button className="button button-secondary" onClick={()=>section==='saved'?chooseSection('feed'):setInterestOpen(true)}>{section==='saved'?'Back to your feed':'Chat with Aura'}</button></div>}</>}
          {variant === 'current' && <div className="mobile-interest-card"><InterestPanel profile={profile} themes={themes} variant={variant} pointBurst={pointBurst} dna={live.dna} onRemoveRule={dropRule} onEdit={()=>setInterestOpen(true)}/></div>}
        </main><div className="right-rail"><InterestPanel profile={profile} themes={themes} variant={variant} pointBurst={pointBurst} dna={live.dna} onRemoveRule={dropRule} onEdit={()=>setInterestOpen(true)}/><div className="signal-tip"><div className="tip-heading"><span><Sparkles size={12}/></span> A small reminder</div><p>Chat with <b>Aura</b> to reshape your DNA, or use a quick <b>resonate</b> / <b>banish</b> while you browse.</p><button onClick={()=>setInterestOpen(true)}>Talk to Aura <ArrowRight size={12}/></button></div><div className="footer-links"><span>AURA · EARLY ACCESS</span><span>Made for curiosity <span className="tiny-heart">✳</span></span></div></div></div>
     </div>
@@ -992,7 +1010,7 @@ export function AuraFeed({ variant = 'current' }: { variant?: 'current' | 'glass
       ))}
     </div>
      <nav className="mobile-nav" aria-label="Mobile navigation"><button className={section==='feed'?'active':''} onClick={()=>chooseSection('feed')}><House size={19}/><span>Feed</span></button><button className={section==='discover'?'active':''} onClick={()=>chooseSection('discover')}><Compass size={19}/><span>Explore</span></button><button className="mobile-compose" onClick={()=>setComposerOpen(true)} aria-label="Create post"><Plus size={21}/></button><button className={section==='saved'?'active':''} onClick={()=>chooseSection('saved')}><Bookmark size={19}/><span>Saved</span></button><button className={variant === 'glass' ? 'glass-profile-trigger' : ''} aria-label={variant === 'glass' ? 'Open Interest DNA profile' : 'Chat with Aura'} aria-haspopup={variant === 'glass' ? 'dialog' : undefined} aria-expanded={variant === 'glass' ? profilePopoverOpen : undefined} onClick={()=>variant === 'glass' ? setProfilePopoverOpen(open=>!open) : setInterestOpen(true)}><Waves size={19}/><span>Aura</span></button></nav>
-     {interestOpen&&<AuraChatModal themes={themes} variant={variant} talkToAura={live.talkToAura} revealCoach={revealChatCoach} stagedEnter={chatStagedEnter} onClose={closeAuraChat} onApply={async (next, turn, chatMessages) => {
+     {interestOpen&&<AuraChatModal themes={themes} variant={variant} autoApplied={!live.demo} talkToAura={live.talkToAura} revealCoach={revealChatCoach} stagedEnter={chatStagedEnter} onClose={closeAuraChat} onApply={async (next, turn, chatMessages) => {
        const applied = await live.applyAuraProfile(turn, chatMessages, themes.map((t) => t.label || t.id));
        const profileToUse = applied ?? next;
        if (live.demo) setLocalProfile(profileToUse);
