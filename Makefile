@@ -23,6 +23,9 @@ QUERY ?=
 USER ?= demo
 K ?= 10
 
+# Value of KEY in .env (empty if unset). The BFF is Node, so it doesn't read .env itself.
+envval = $(shell sed -n 's/^$(1)=//p' .env 2>/dev/null | tail -n1)
+
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
 		awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2}'
@@ -101,6 +104,9 @@ list-docs: ## List scraped documents from MongoDB
 embed: ## Embed pending posts into Qdrant (LIMIT=N SOURCE=…)
 	@$(SCRAPER) embed $(if $(SOURCE),--source $(SOURCE),) $(if $(LIMIT),--limit $(LIMIT),)
 
+reembed: ## Move all post + user vectors onto LITELLM_EMBEDDING_MODEL (no LLM calls)
+	@$(SCRAPER) reembed
+
 embed-status: ## Show embedding status counts
 	@$(SCRAPER) embed-status
 
@@ -121,6 +127,11 @@ web-codegen: ## Regenerate Orval client + Zod from OpenAPI
 
 web-api: ## Start Express BFF on :5001 (proxies to Python :8000; avoids macOS AirPlay on :5000)
 	cd web && PORT=$${PORT:-5001} RECOMMENDATION_API_URL=$${RECOMMENDATION_API_URL:-http://127.0.0.1:8000} \
+		GOOGLE_CLIENT_ID="$${GOOGLE_CLIENT_ID:-$(call envval,GOOGLE_CLIENT_ID)}" \
+		GOOGLE_CLIENT_SECRET="$${GOOGLE_CLIENT_SECRET:-$(call envval,GOOGLE_CLIENT_SECRET)}" \
+		GOOGLE_REDIRECT_URI="$${GOOGLE_REDIRECT_URI:-$(call envval,GOOGLE_REDIRECT_URI)}" \
+		AURA_COOKIE_SECRET="$${AURA_COOKIE_SECRET:-$(call envval,AURA_COOKIE_SECRET)}" \
+		AURA_INTERNAL_TOKEN="$${AURA_INTERNAL_TOKEN:-$(call envval,AURA_INTERNAL_TOKEN)}" \
 		pnpm --filter @workspace/api-server run dev
 
 web-ui: ## Start aura-web against live API (needs make serve + make web-api)
