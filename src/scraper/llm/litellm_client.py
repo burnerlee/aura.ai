@@ -11,10 +11,9 @@ from typing import Any, TypeVar
 
 import httpx
 import numpy as np
+from litellm import completion, embedding
 from pydantic import BaseModel
 from tenacity import retry, retry_if_exception, stop_after_attempt, wait_exponential
-
-from litellm import completion, embedding
 
 from scraper.config import Settings, get_settings
 
@@ -99,38 +98,15 @@ class LiteLLMClient:
         reraise=True,
     )
     def _embed_raw(self, text: str) -> list[float]:
-        """Embed with Gemini first (when configured), fallback to LiteLLM proxy on quota."""
-        primary_model = self.settings.litellm_embedding_model
-        fallback_model = self.settings.litellm_embedding_fallback_model
-        self.last_embed_model = primary_model
+        """Embed with the one configured model.
 
+        Never falls back to a different model: vectors from different models are not
+        comparable, and a mixed corpus silently ruins every similarity score.
+        """
+        model = self.settings.litellm_embedding_model
+        self.last_embed_model = model
         with self._sem:
-            try:
-                result = embedding(
-                    model=primary_model,
-                    input=[text],
-                    **self._embed_kwargs(primary_model),
-                )
-            except Exception as exc:  # noqa: BLE001
-                # If Gemini quota is exhausted, optionally fall back to the proxy.
-                if (
-                    fallback_model
-                    and primary_model.startswith("gemini/")
-                    and self._is_retryable(exc)
-                ):
-                    logger.warning(
-                        "Embedding rate-limited on %s; falling back to %s",
-                        primary_model,
-                        fallback_model,
-                    )
-                    self.last_embed_model = fallback_model
-                    result = embedding(
-                        model=fallback_model,
-                        input=[text],
-                        **self._embed_kwargs(fallback_model),
-                    )
-                else:
-                    raise
+            result = embedding(model=model, input=[text], **self._embed_kwargs(model))
         data = result.data[0]
         values = list(data["embedding"] if isinstance(data, dict) else data.embedding)
         return self._truncate(values)
