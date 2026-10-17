@@ -293,6 +293,7 @@ function AuraChatModal({
   const [coachActive, setCoachActive] = useState(false);
   const threadRef = useRef<HTMLDivElement | null>(null);
   const dockRef = useRef<HTMLDivElement | null>(null);
+  const inputRef = useRef<HTMLInputElement | null>(null);
   const preview = useMemo(() => {
     if (!turn?.profile) return null;
     return interestProfileFromAura(turn.profile, themes.map((t) => t.id));
@@ -338,6 +339,21 @@ function AuraChatModal({
     dockRef.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
   }, [coachActive]);
 
+  function appendToDraft(text: string) {
+    const next = text.trim();
+    if (!next) return;
+    setCoachActive(false);
+    setDraft((current) => {
+      const base = current.trim();
+      if (!base) return next;
+      // `input` cannot contain newlines; keep a readable separator for multi-select.
+      const needsSpace = /[,:;.!?]$/.test(base);
+      return `${base}${needsSpace ? ' ' : ', '}${next}`;
+    });
+    // Keep the cursor in the compose box so multiple chips can be tapped quickly.
+    window.setTimeout(() => inputRef.current?.focus(), 0);
+  }
+
   async function send(text: string) {
     const content = text.trim();
     if (!content || busy || applying) return;
@@ -369,7 +385,7 @@ function AuraChatModal({
       }
       return;
     }
-    await send(option.label);
+    appendToDraft(option.label);
   }
 
   async function applyProfile() {
@@ -434,7 +450,7 @@ function AuraChatModal({
           <div className="aura-theme-row">
             <span>Themes</span>
             {seedThemes.slice(0, 4).map((theme) => (
-              <button key={theme} type="button" className="suggestion-chip" disabled={applying} onClick={() => void send(`More ${theme}`)}>+ {theme}</button>
+              <button key={theme} type="button" className="suggestion-chip" disabled={applying} onClick={() => appendToDraft(`More ${theme}`)}>+ {theme}</button>
             ))}
           </div>
         )}
@@ -442,7 +458,7 @@ function AuraChatModal({
           <div className="aura-theme-row">
             <span>Themes</span>
             {turn.suggested_themes.slice(0, 4).map((theme) => (
-              <button key={theme} type="button" className="suggestion-chip" disabled={busy || applying} onClick={() => void send(`More ${theme}`)}>+ {theme}</button>
+              <button key={theme} type="button" className="suggestion-chip" disabled={busy || applying} onClick={() => appendToDraft(`More ${theme}`)}>+ {theme}</button>
             ))}
           </div>
         )}
@@ -485,6 +501,7 @@ function AuraChatModal({
           <input
             id="aura-chat-input"
             className="aura-chat-input"
+            ref={inputRef}
             value={draft}
             onChange={(event) => setDraft(event.target.value)}
             placeholder={coachActive ? 'e.g. “deep space essays, not hype AI”' : 'Type a reply, or tap an option…'}
