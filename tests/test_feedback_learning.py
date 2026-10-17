@@ -352,7 +352,9 @@ def test_resonate_is_a_toggle_second_click_undos_the_like():
 
     service.record_event_outcome(_event("u1", "a", EventType.LIKE, strength=2, match_percent=50))
     liked = service.get_dna("u1")
-    assert liked.weights["theme:space"] == pytest.approx(before.weights["theme:space"] + 7.0, abs=0.25)
+    assert liked.weights["theme:space"] == pytest.approx(
+        before.weights["theme:space"] + 7.0, abs=0.25
+    )
 
     # Sending LIKE again for the same post should toggle it off and undo the DNA delta.
     service.record_event_outcome(_event("u1", "a", EventType.LIKE, strength=2, match_percent=50))

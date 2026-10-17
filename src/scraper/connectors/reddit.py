@@ -132,7 +132,8 @@ class RedditConnector(BaseConnector):
         _ = self.subreddit
         allowed = {"hot", "new", "top", "rising", "controversial"}
         if self.sort not in allowed:
-            raise ValueError(f"Invalid sort '{self.sort}'. Use one of: {', '.join(sorted(allowed))}")
+            options = ", ".join(sorted(allowed))
+            raise ValueError(f"Invalid sort '{self.sort}'. Use one of: {options}")
         if self.comment_limit < 0:
             raise ValueError("comment_limit must be >= 0")
 
@@ -185,7 +186,9 @@ class RedditConnector(BaseConnector):
             entry_id = (entry.findtext("atom:id", default="", namespaces=ns) or "").strip()
             updated = (entry.findtext("atom:updated", default="", namespaces=ns) or "").strip()
             published = (entry.findtext("atom:published", default="", namespaces=ns) or "").strip()
-            author = (entry.findtext("atom:author/atom:name", default="", namespaces=ns) or "").strip()
+            author = (
+                entry.findtext("atom:author/atom:name", default="", namespaces=ns) or ""
+            ).strip()
 
             link_url = ""
             for link in entry.findall("atom:link", ns):
@@ -251,7 +254,9 @@ class RedditConnector(BaseConnector):
                 external_id = match.group("id")
 
         title = entry.get("title") if isinstance(entry.get("title"), str) else None
-        content_html = entry.get("content_html") if isinstance(entry.get("content_html"), str) else None
+        content_html = (
+            entry.get("content_html") if isinstance(entry.get("content_html"), str) else None
+        )
         content_text = html_to_text(content_html)
 
         author_name = entry.get("author") if isinstance(entry.get("author"), str) else None
@@ -300,7 +305,11 @@ class RedditConnector(BaseConnector):
             return doc
 
         try:
-            data = self._fetch_comments(client, permalink=permalink.rstrip("/"), limit=self.comment_limit)
+            data = self._fetch_comments(
+                client,
+                permalink=permalink.rstrip("/"),
+                limit=self.comment_limit,
+            )
         except Exception as exc:  # noqa: BLE001
             logger.debug("Failed to fetch comments for %s: %s", permalink, exc)
             return doc

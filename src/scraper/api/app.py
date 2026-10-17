@@ -32,6 +32,7 @@ from scraper.api.schemas import (
     SearchRequest,
     TuneRequest,
 )
+from scraper.config import get_settings
 from scraper.embedding.worker import embed_by_ids
 from scraper.models.tag import TagKind
 from scraper.models.user import DNAPatch, EventType, Interaction
@@ -41,7 +42,6 @@ from scraper.profile.service import UserProfileService
 from scraper.query.engine import RecommendationEngine
 from scraper.query.types import Filters
 from scraper.tags.service import TagService
-from scraper.config import get_settings
 
 
 class _StripApiPrefixMiddleware:

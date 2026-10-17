@@ -361,7 +361,11 @@ class UserProfileService:
                     profile.dna = adjust_weight(
                         profile.dna, theme[0], theme[1], -(weight * DNA_STEP * scale)
                     )
-                profile.positive_ids = [pid for pid in profile.positive_ids if pid != interaction.post_id]
+                profile.positive_ids = [
+                    pid
+                    for pid in profile.positive_ids
+                    if pid != interaction.post_id
+                ]
                 # Recompute state/centroids from the remaining positives (cheap window).
                 positives: list[list[float]] = []
                 for pid in profile.positive_ids[-50:]:
@@ -390,7 +394,11 @@ class UserProfileService:
                     profile.dna = adjust_weight(
                         profile.dna, theme[0], theme[1], -(weight * DNA_STEP * scale)
                     )
-                profile.negative_ids = [pid for pid in profile.negative_ids if pid != interaction.post_id]
+                profile.negative_ids = [
+                    pid
+                    for pid in profile.negative_ids
+                    if pid != interaction.post_id
+                ]
                 weight = 0.0
                 interaction.weight = 0.0
                 toggled_off = True
@@ -1062,7 +1070,12 @@ class UserProfileService:
                 {"$set": {"user_id": to_user_id}},
             )
         except Exception as exc:  # noqa: BLE001
-            logger.debug("Interaction migration failed (%s -> %s): %s", from_user_id, to_user_id, exc)
+            logger.debug(
+                "Interaction migration failed (%s -> %s): %s",
+                from_user_id,
+                to_user_id,
+                exc,
+            )
 
         # Advance persona version to signal a state change.
         dst.persona_version = max(dst.persona_version, src.persona_version) + 1
