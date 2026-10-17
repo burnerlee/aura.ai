@@ -12,7 +12,9 @@ from typing import Any, TypeVar
 import httpx
 import numpy as np
 from pydantic import BaseModel
-from tenacity import retry, stop_after_attempt, wait_exponential
+from tenacity import retry, retry_if_exception, stop_after_attempt, wait_exponential
+
+from litellm import completion, embedding
 
 from scraper.config import Settings, get_settings
 
@@ -47,14 +49,13 @@ class LiteLLMClient:
             kwargs["api_base"] = self.settings.litellm_api_base
         return kwargs
 
-    def _embed_kwargs(self) -> dict[str, Any]:
+    def _embed_kwargs(self, model: str) -> dict[str, Any]:
         """Auth for embeddings.
 
         Gateway virtual keys (arcus) typically expose chat models on ``/v1`` but not
         Gemini embeddings. When the configured embed model is ``gemini/...``, call
         Google directly with ``GEMINI_API_KEY`` and skip the proxy base URL.
         """
-        model = self.settings.litellm_embedding_model
         if model.startswith("gemini/") and self.settings.gemini_api_key:
             return {"api_key": self.settings.gemini_api_key}
         kwargs: dict[str, Any] = {"api_key": self.settings.litellm_api_key}
@@ -74,16 +75,62 @@ class LiteLLMClient:
             values = values[:dim]
         return _l2_normalize(values)
 
-    @retry(wait=wait_exponential(multiplier=1, min=1, max=20), stop=stop_after_attempt(4))
+    @staticmethod
+    def _is_retryable(exc: BaseException) -> bool:
+        """Best-effort classification for transient failures worth retrying."""
+        name = exc.__class__.__name__.lower()
+        msg = str(exc).lower()
+        if "ratelimit" in name or "rate limit" in msg:
+            return True
+        if "too many requests" in msg or " 429" in msg or "status code 429" in msg:
+            return True
+        if "timeout" in name or "timed out" in msg:
+            return True
+        if "serviceunavailable" in name or "503" in msg:
+            return True
+        if "connection" in name or "connect" in msg or "dns" in msg:
+            return True
+        return False
+
+    @retry(
+        retry=retry_if_exception(_is_retryable.__func__),
+        wait=wait_exponential(multiplier=2, min=2, max=120),
+        stop=stop_after_attempt(8),
+        reraise=True,
+    )
     def _embed_raw(self, text: str) -> list[float]:
-        from litellm import embedding
+        """Embed with Gemini first (when configured), fallback to LiteLLM proxy on quota."""
+        primary_model = self.settings.litellm_embedding_model
+        fallback_model = self.settings.litellm_embedding_fallback_model
+        self.last_embed_model = primary_model
 
         with self._sem:
-            result = embedding(
-                model=self.settings.litellm_embedding_model,
-                input=[text],
-                **self._embed_kwargs(),
-            )
+            try:
+                result = embedding(
+                    model=primary_model,
+                    input=[text],
+                    **self._embed_kwargs(primary_model),
+                )
+            except Exception as exc:  # noqa: BLE001
+                # If Gemini quota is exhausted, optionally fall back to the proxy.
+                if (
+                    fallback_model
+                    and primary_model.startswith("gemini/")
+                    and self._is_retryable(exc)
+                ):
+                    logger.warning(
+                        "Embedding rate-limited on %s; falling back to %s",
+                        primary_model,
+                        fallback_model,
+                    )
+                    self.last_embed_model = fallback_model
+                    result = embedding(
+                        model=fallback_model,
+                        input=[text],
+                        **self._embed_kwargs(fallback_model),
+                    )
+                else:
+                    raise
         data = result.data[0]
         values = list(data["embedding"] if isinstance(data, dict) else data.embedding)
         return self._truncate(values)
@@ -108,10 +155,13 @@ class LiteLLMClient:
             logger.warning("LiteLLM image embed failed for %s: %s", url, exc)
             return None
 
-    @retry(wait=wait_exponential(multiplier=1, min=1, max=20), stop=stop_after_attempt(3))
+    @retry(
+        retry=retry_if_exception(_is_retryable.__func__),
+        wait=wait_exponential(multiplier=2, min=2, max=120),
+        stop=stop_after_attempt(6),
+        reraise=True,
+    )
     def generate_json(self, prompt: str, schema: type[T]) -> T:
-        from litellm import completion
-
         schema_hint = json.dumps(schema.model_json_schema(), indent=2)
         messages = [
             {

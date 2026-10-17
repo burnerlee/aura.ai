@@ -44,6 +44,9 @@ class Settings(BaseSettings):
     litellm_api_base: str | None = None
     litellm_embedding_model: str = "gemini/gemini-embedding-001"
     litellm_llm_model: str = "openai/gemini-2.5-flash"
+    # If Gemini embeddings hit quota / rate limits, fall back to an OpenAI-compatible
+    # embedding model via the LiteLLM proxy (if configured).
+    litellm_embedding_fallback_model: str | None = "text-embedding-3-small"
     # Upper bound only. Thinking models spend part of it on reasoning before the JSON.
     llm_max_output_tokens: int = 8192
 

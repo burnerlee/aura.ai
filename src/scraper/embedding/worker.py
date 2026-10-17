@@ -114,10 +114,16 @@ def _embed_one_raw(
             image_vector=image_vector,
             payload=payload,
         )
+        # Best-effort: record which embedding model actually produced vectors.
+        last_model = getattr(client, "last_embed_model", None)
         embed_model = (
-            settings.litellm_embedding_model
-            if settings.litellm_api_key
-            else settings.gemini_embedding_model
+            last_model
+            if isinstance(last_model, str) and last_model.strip()
+            else (
+                settings.litellm_embedding_model
+                if settings.litellm_api_key
+                else settings.gemini_embedding_model
+            )
         )
         store.mark_embedded(
             src,
