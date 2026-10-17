@@ -682,3 +682,18 @@ a { color: inherit; }
 .noticed-actions .quiet { border-color:rgba(255,255,255,.1);color:#9d97ad;background:transparent; }
 .noticed-chip small { color:#8f88a3;font-size:8px; }
 @media (max-width: 760px) { .noticed-panel { right:12px;bottom:86px; } }
+
+/* Match insight: headline, reasons, and the real posts it points back to */
+.insight-body { display:flex;min-width:0;flex:1;flex-direction:column;gap:6px; }
+.insight-headline { color:#d9cfee;font-size:10px;font-weight:600;letter-spacing:-.1px; }
+.insight-reasons { display:flex;flex-direction:column;gap:5px;margin:0;padding:0;list-style:none; }
+.insight-reasons li { position:relative;padding-left:11px;color:#b6ada9;font-size:9px;line-height:1.55; }
+.insight-reasons li::before { content:"";position:absolute;top:.62em;left:1px;width:4px;height:4px;border-radius:50%;background:rgba(195,167,255,.55); }
+.insight-reasons li.reason-caution::before,.insight-reasons li.reason-similar_skipped::before { background:rgba(255,190,120,.8); }
+.insight-reasons li.reason-affinity::before,.insight-reasons li.reason-similar_liked::before,.insight-reasons li.reason-shared_topics::before { background:rgba(155,233,197,.8); }
+.insight-reasons li.reason-variety,.insight-reasons li.reason-cold_start { color:#9d96a5;font-style:italic; }
+.insight-refs { display:flex;flex-wrap:wrap;gap:5px;margin-top:2px; }
+.ref-chip { display:inline-flex;max-width:100%;align-items:center;gap:5px;padding:3px 8px;border:1px solid rgba(155,233,197,.22);border-radius:20px;color:#bfe8d3;background:rgba(155,233,197,.06);font-size:8px; }
+.ref-chip.skipped { border-color:rgba(255,190,120,.24);color:#e6cba8;background:rgba(255,190,120,.055); }
+.ref-chip>span { overflow:hidden;text-overflow:ellipsis;white-space:nowrap; }
+.aura-app.aura-glass .insight-reasons li { color:#c2beca; }

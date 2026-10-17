@@ -20,7 +20,7 @@ from pydantic import BaseModel, Field
 
 from scraper.models.document import EmbeddingStatus
 from scraper.models.tag import TagKind, TagRef
-from scraper.query.types import MatchInfo, ScoredPost
+from scraper.query.types import MatchInfo, MatchInsight, ScoredPost
 from scraper.tags import GENERIC_LABELS
 
 # Seed labels kept for UGC composer defaults; live cards use facet topics.
@@ -74,6 +74,8 @@ class FeedCard(BaseModel):
     per_query_scores: dict[str, float] = Field(default_factory=dict)
     # Relative match (percentile among everything scored for this request) + breakdown.
     match: MatchInfo | None = None
+    # Plain-language account of why this is in the feed (personalized feed only).
+    insight: MatchInsight | None = None
 
 
 def _initials(name: str) -> str:
@@ -204,6 +206,7 @@ def mongo_to_card(
     why: str | None = None,
     per_query_scores: dict[str, float] | None = None,
     match: MatchInfo | None = None,
+    insight: MatchInsight | None = None,
 ) -> FeedCard:
     """Map a Mongo posts document to a UI card."""
     post_id = str(raw.get("_id") or raw.get("post_id") or "")
@@ -275,6 +278,7 @@ def mongo_to_card(
         why=why,
         per_query_scores=per_query_scores or {},
         match=match,
+        insight=insight,
     )
 
 
@@ -302,6 +306,7 @@ def hydrate_scored(
                     why=result.reason,
                     per_query_scores=result.per_query_scores,
                     match=result.match,
+                    insight=result.insight,
                 )
             )
             continue
@@ -314,6 +319,7 @@ def hydrate_scored(
                 why=result.reason,
                 per_query_scores=result.per_query_scores,
                 match=result.match,
+                    insight=result.insight,
             )
         )
     return cards

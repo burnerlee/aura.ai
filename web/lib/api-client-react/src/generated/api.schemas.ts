@@ -79,6 +79,57 @@ export interface MatchInfo {
   flags: MatchFlag[];
 }
 
+export type InsightReasonKind = typeof InsightReasonKind[keyof typeof InsightReasonKind];
+
+
+export const InsightReasonKind = {
+  theme: 'theme',
+  attribution: 'attribution',
+  similar_liked: 'similar_liked',
+  shared_topics: 'shared_topics',
+  affinity: 'affinity',
+  caution: 'caution',
+  similar_skipped: 'similar_skipped',
+  fresh: 'fresh',
+  variety: 'variety',
+  cold_start: 'cold_start',
+} as const;
+
+export interface InsightReason {
+  kind: InsightReasonKind;
+  text: string;
+}
+
+export type InsightPostRefRelation = typeof InsightPostRefRelation[keyof typeof InsightPostRefRelation];
+
+
+export const InsightPostRefRelation = {
+  liked: 'liked',
+  skipped: 'skipped',
+} as const;
+
+/**
+ * A post the user already reacted to that this one is compared with.
+ */
+export interface InsightPostRef {
+  post_id: string;
+  title: string;
+  relation: InsightPostRefRelation;
+  similarity: number;
+  shared_topics?: string[];
+}
+
+/**
+ * Built only from facts we hold (Interest DNA, tags, posts the user liked or
+ * skipped, learned rules); a referenced post is always a real one they reacted to.
+ */
+export interface MatchInsight {
+  headline: string;
+  summary: string;
+  reasons: InsightReason[];
+  references: InsightPostRef[];
+}
+
 export interface FeedCard {
   /** MongoDB _id */
   id: string;
@@ -107,6 +158,8 @@ export interface FeedCard {
   category_tag_id?: string | null;
   canonical_tags?: CardTag[];
   match?: MatchInfo | null;
+  /** Plain-language account of why this is in the feed (personalized feed only). */
+  insight?: MatchInsight | null;
 }
 
 export interface SearchRequest {

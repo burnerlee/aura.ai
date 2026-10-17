@@ -80,6 +80,46 @@ class MatchInfo(BaseModel):
     flags: list[MatchFlag] = Field(default_factory=list)
 
 
+class InsightPostRef(BaseModel):
+    """A post the user already reacted to that this one is being compared with."""
+
+    post_id: str
+    title: str
+    relation: Literal["liked", "skipped"]
+    similarity: float
+    shared_topics: list[str] = Field(default_factory=list)
+
+
+class InsightReason(BaseModel):
+    kind: Literal[
+        "theme",
+        "attribution",
+        "similar_liked",
+        "shared_topics",
+        "affinity",
+        "caution",
+        "similar_skipped",
+        "fresh",
+        "variety",
+        "cold_start",
+    ]
+    text: str
+
+
+class MatchInsight(BaseModel):
+    """A readable account of why a post is in the user's feed, built only from facts.
+
+    Every sentence comes from something we know: the Interest DNA, the tags, the posts
+    the user liked or skipped, the learned rules. Nothing is generated freehand, so a
+    referenced post is always a real one the user reacted to.
+    """
+
+    headline: str
+    summary: str
+    reasons: list[InsightReason] = Field(default_factory=list)
+    references: list[InsightPostRef] = Field(default_factory=list)
+
+
 class ScoredPost(BaseModel):
     post_id: str
     score: float
@@ -88,3 +128,6 @@ class ScoredPost(BaseModel):
     reason: str | None = None
     point_id: str | None = None
     match: MatchInfo | None = None
+    insight: MatchInsight | None = None
+    # Doc-level embedding, kept so callers can compare this post with others. Internal.
+    doc_vector: list[float] | None = Field(default=None, exclude=True)

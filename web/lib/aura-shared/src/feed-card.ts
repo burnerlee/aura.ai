@@ -2,7 +2,7 @@
  * Copyright (c) 2026 DevRev Inc. All rights reserved.
  */
 
-import type { FeedPost, InterestCategoryId, PostKind, PostMatch } from "./types";
+import type { FeedPost, InterestCategoryId, PostInsight, PostKind, PostMatch } from "./types";
 import { formatRelativeTime } from "./themes";
 
 /** Snake_case card from the Python / BFF recommendation API. */
@@ -37,6 +37,18 @@ export interface ApiFeedCard {
   per_query_scores?: Record<string, number>;
   category_tag_id?: string | null;
   canonical_tags?: { id: string; label: string; kind: "topic" | "style" | "theme" }[];
+  insight?: {
+    headline: string;
+    summary: string;
+    reasons: { kind: string; text: string }[];
+    references: {
+      post_id: string;
+      title: string;
+      relation: "liked" | "skipped";
+      similarity: number;
+      shared_topics?: string[];
+    }[];
+  } | null;
   match?: {
     percent?: number | null;
     fit: number;
@@ -93,6 +105,22 @@ function mapMatch(match: ApiFeedCard["match"]): PostMatch | undefined {
   };
 }
 
+function mapInsight(insight: ApiFeedCard["insight"]): PostInsight | undefined {
+  if (!insight) return undefined;
+  return {
+    headline: insight.headline,
+    summary: insight.summary,
+    reasons: insight.reasons ?? [],
+    references: (insight.references ?? []).map((ref) => ({
+      postId: ref.post_id,
+      title: ref.title,
+      relation: ref.relation,
+      similarity: ref.similarity,
+      sharedTopics: ref.shared_topics ?? [],
+    })),
+  };
+}
+
 export function mapApiFeedCardToPost(card: ApiFeedCard): FeedPost {
   const sourceUrl = card.url || card.embed_url || undefined;
   return {
@@ -102,6 +130,7 @@ export function mapApiFeedCardToPost(card: ApiFeedCard): FeedPost {
     categoryTagId: card.category_tag_id ?? undefined,
     canonicalTags: card.canonical_tags,
     match: mapMatch(card.match),
+    insight: mapInsight(card.insight),
     author: {
       name: card.author.name,
       handle: card.author.handle,

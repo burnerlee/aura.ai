@@ -9,6 +9,7 @@ import type { CardAuthor } from './cardAuthor';
 import type { CardTag } from './cardTag';
 import type { FeedCardPerQueryScores } from './feedCardPerQueryScores';
 import type { MatchInfo } from './matchInfo';
+import type { MatchInsight } from './matchInsight';
 import type { PostKind } from './postKind';
 
 export interface FeedCard {
@@ -39,4 +40,6 @@ export interface FeedCard {
   category_tag_id?: string | null;
   canonical_tags?: CardTag[];
   match?: MatchInfo | null;
+  /** Plain-language account of why this is in the feed (personalized feed only). */
+  insight?: MatchInsight | null;
 }

@@ -77,7 +77,22 @@ export const SearchPostsResponseItem = zod.object({
   "label": zod.string(),
   "rule_key": zod.string()
 }))
-}).describe('percent is relative: the post\'s percentile among every candidate scored for\nthis request (not the shown list). fit is the absolute value behind it.\n').nullish()
+}).describe('percent is relative: the post\'s percentile among every candidate scored for\nthis request (not the shown list). fit is the absolute value behind it.\n').nullish(),
+  "insight": zod.object({
+  "headline": zod.string(),
+  "summary": zod.string(),
+  "reasons": zod.array(zod.object({
+  "kind": zod.enum(['theme', 'attribution', 'similar_liked', 'shared_topics', 'affinity', 'caution', 'similar_skipped', 'fresh', 'variety', 'cold_start']),
+  "text": zod.string()
+})),
+  "references": zod.array(zod.object({
+  "post_id": zod.string(),
+  "title": zod.string(),
+  "relation": zod.enum(['liked', 'skipped']),
+  "similarity": zod.number(),
+  "shared_topics": zod.array(zod.string()).optional()
+}).describe('A post the user already reacted to that this one is compared with.'))
+}).describe('Built only from facts we hold (Interest DNA, tags, posts the user liked or\nskipped, learned rules); a referenced post is always a real one they reacted to.\n').nullish().describe('Plain-language account of why this is in the feed (personalized feed only).')
 })
 export const SearchPostsResponse = zod.array(SearchPostsResponseItem)
 
@@ -144,7 +159,22 @@ export const DiscoverPostsResponseItem = zod.object({
   "label": zod.string(),
   "rule_key": zod.string()
 }))
-}).describe('percent is relative: the post\'s percentile among every candidate scored for\nthis request (not the shown list). fit is the absolute value behind it.\n').nullish()
+}).describe('percent is relative: the post\'s percentile among every candidate scored for\nthis request (not the shown list). fit is the absolute value behind it.\n').nullish(),
+  "insight": zod.object({
+  "headline": zod.string(),
+  "summary": zod.string(),
+  "reasons": zod.array(zod.object({
+  "kind": zod.enum(['theme', 'attribution', 'similar_liked', 'shared_topics', 'affinity', 'caution', 'similar_skipped', 'fresh', 'variety', 'cold_start']),
+  "text": zod.string()
+})),
+  "references": zod.array(zod.object({
+  "post_id": zod.string(),
+  "title": zod.string(),
+  "relation": zod.enum(['liked', 'skipped']),
+  "similarity": zod.number(),
+  "shared_topics": zod.array(zod.string()).optional()
+}).describe('A post the user already reacted to that this one is compared with.'))
+}).describe('Built only from facts we hold (Interest DNA, tags, posts the user liked or\nskipped, learned rules); a referenced post is always a real one they reacted to.\n').nullish().describe('Plain-language account of why this is in the feed (personalized feed only).')
 })
 export const DiscoverPostsResponse = zod.array(DiscoverPostsResponseItem)
 
@@ -203,7 +233,22 @@ export const ListPostsResponseItem = zod.object({
   "label": zod.string(),
   "rule_key": zod.string()
 }))
-}).describe('percent is relative: the post\'s percentile among every candidate scored for\nthis request (not the shown list). fit is the absolute value behind it.\n').nullish()
+}).describe('percent is relative: the post\'s percentile among every candidate scored for\nthis request (not the shown list). fit is the absolute value behind it.\n').nullish(),
+  "insight": zod.object({
+  "headline": zod.string(),
+  "summary": zod.string(),
+  "reasons": zod.array(zod.object({
+  "kind": zod.enum(['theme', 'attribution', 'similar_liked', 'shared_topics', 'affinity', 'caution', 'similar_skipped', 'fresh', 'variety', 'cold_start']),
+  "text": zod.string()
+})),
+  "references": zod.array(zod.object({
+  "post_id": zod.string(),
+  "title": zod.string(),
+  "relation": zod.enum(['liked', 'skipped']),
+  "similarity": zod.number(),
+  "shared_topics": zod.array(zod.string()).optional()
+}).describe('A post the user already reacted to that this one is compared with.'))
+}).describe('Built only from facts we hold (Interest DNA, tags, posts the user liked or\nskipped, learned rules); a referenced post is always a real one they reacted to.\n').nullish().describe('Plain-language account of why this is in the feed (personalized feed only).')
 })
 export const ListPostsResponse = zod.array(ListPostsResponseItem)
 
@@ -278,7 +323,22 @@ export const CreatePostResponse = zod.object({
   "label": zod.string(),
   "rule_key": zod.string()
 }))
-}).describe('percent is relative: the post\'s percentile among every candidate scored for\nthis request (not the shown list). fit is the absolute value behind it.\n').nullish()
+}).describe('percent is relative: the post\'s percentile among every candidate scored for\nthis request (not the shown list). fit is the absolute value behind it.\n').nullish(),
+  "insight": zod.object({
+  "headline": zod.string(),
+  "summary": zod.string(),
+  "reasons": zod.array(zod.object({
+  "kind": zod.enum(['theme', 'attribution', 'similar_liked', 'shared_topics', 'affinity', 'caution', 'similar_skipped', 'fresh', 'variety', 'cold_start']),
+  "text": zod.string()
+})),
+  "references": zod.array(zod.object({
+  "post_id": zod.string(),
+  "title": zod.string(),
+  "relation": zod.enum(['liked', 'skipped']),
+  "similarity": zod.number(),
+  "shared_topics": zod.array(zod.string()).optional()
+}).describe('A post the user already reacted to that this one is compared with.'))
+}).describe('Built only from facts we hold (Interest DNA, tags, posts the user liked or\nskipped, learned rules); a referenced post is always a real one they reacted to.\n').nullish().describe('Plain-language account of why this is in the feed (personalized feed only).')
 }),
   "embedding_summary": zod.record(zod.string(), zod.unknown()).nullish()
 })
@@ -338,7 +398,22 @@ export const GetPostResponse = zod.object({
   "label": zod.string(),
   "rule_key": zod.string()
 }))
-}).describe('percent is relative: the post\'s percentile among every candidate scored for\nthis request (not the shown list). fit is the absolute value behind it.\n').nullish()
+}).describe('percent is relative: the post\'s percentile among every candidate scored for\nthis request (not the shown list). fit is the absolute value behind it.\n').nullish(),
+  "insight": zod.object({
+  "headline": zod.string(),
+  "summary": zod.string(),
+  "reasons": zod.array(zod.object({
+  "kind": zod.enum(['theme', 'attribution', 'similar_liked', 'shared_topics', 'affinity', 'caution', 'similar_skipped', 'fresh', 'variety', 'cold_start']),
+  "text": zod.string()
+})),
+  "references": zod.array(zod.object({
+  "post_id": zod.string(),
+  "title": zod.string(),
+  "relation": zod.enum(['liked', 'skipped']),
+  "similarity": zod.number(),
+  "shared_topics": zod.array(zod.string()).optional()
+}).describe('A post the user already reacted to that this one is compared with.'))
+}).describe('Built only from facts we hold (Interest DNA, tags, posts the user liked or\nskipped, learned rules); a referenced post is always a real one they reacted to.\n').nullish().describe('Plain-language account of why this is in the feed (personalized feed only).')
 })
 
 
@@ -405,7 +480,22 @@ export const SimilarPostsResponseItem = zod.object({
   "label": zod.string(),
   "rule_key": zod.string()
 }))
-}).describe('percent is relative: the post\'s percentile among every candidate scored for\nthis request (not the shown list). fit is the absolute value behind it.\n').nullish()
+}).describe('percent is relative: the post\'s percentile among every candidate scored for\nthis request (not the shown list). fit is the absolute value behind it.\n').nullish(),
+  "insight": zod.object({
+  "headline": zod.string(),
+  "summary": zod.string(),
+  "reasons": zod.array(zod.object({
+  "kind": zod.enum(['theme', 'attribution', 'similar_liked', 'shared_topics', 'affinity', 'caution', 'similar_skipped', 'fresh', 'variety', 'cold_start']),
+  "text": zod.string()
+})),
+  "references": zod.array(zod.object({
+  "post_id": zod.string(),
+  "title": zod.string(),
+  "relation": zod.enum(['liked', 'skipped']),
+  "similarity": zod.number(),
+  "shared_topics": zod.array(zod.string()).optional()
+}).describe('A post the user already reacted to that this one is compared with.'))
+}).describe('Built only from facts we hold (Interest DNA, tags, posts the user liked or\nskipped, learned rules); a referenced post is always a real one they reacted to.\n').nullish().describe('Plain-language account of why this is in the feed (personalized feed only).')
 })
 export const SimilarPostsResponse = zod.array(SimilarPostsResponseItem)
 
@@ -490,7 +580,22 @@ export const GetUserFeedResponseItem = zod.object({
   "label": zod.string(),
   "rule_key": zod.string()
 }))
-}).describe('percent is relative: the post\'s percentile among every candidate scored for\nthis request (not the shown list). fit is the absolute value behind it.\n').nullish()
+}).describe('percent is relative: the post\'s percentile among every candidate scored for\nthis request (not the shown list). fit is the absolute value behind it.\n').nullish(),
+  "insight": zod.object({
+  "headline": zod.string(),
+  "summary": zod.string(),
+  "reasons": zod.array(zod.object({
+  "kind": zod.enum(['theme', 'attribution', 'similar_liked', 'shared_topics', 'affinity', 'caution', 'similar_skipped', 'fresh', 'variety', 'cold_start']),
+  "text": zod.string()
+})),
+  "references": zod.array(zod.object({
+  "post_id": zod.string(),
+  "title": zod.string(),
+  "relation": zod.enum(['liked', 'skipped']),
+  "similarity": zod.number(),
+  "shared_topics": zod.array(zod.string()).optional()
+}).describe('A post the user already reacted to that this one is compared with.'))
+}).describe('Built only from facts we hold (Interest DNA, tags, posts the user liked or\nskipped, learned rules); a referenced post is always a real one they reacted to.\n').nullish().describe('Plain-language account of why this is in the feed (personalized feed only).')
 })
 export const GetUserFeedResponse = zod.array(GetUserFeedResponseItem)
 
@@ -549,7 +654,22 @@ export const GetUserPairResponseItem = zod.object({
   "label": zod.string(),
   "rule_key": zod.string()
 }))
-}).describe('percent is relative: the post\'s percentile among every candidate scored for\nthis request (not the shown list). fit is the absolute value behind it.\n').nullish()
+}).describe('percent is relative: the post\'s percentile among every candidate scored for\nthis request (not the shown list). fit is the absolute value behind it.\n').nullish(),
+  "insight": zod.object({
+  "headline": zod.string(),
+  "summary": zod.string(),
+  "reasons": zod.array(zod.object({
+  "kind": zod.enum(['theme', 'attribution', 'similar_liked', 'shared_topics', 'affinity', 'caution', 'similar_skipped', 'fresh', 'variety', 'cold_start']),
+  "text": zod.string()
+})),
+  "references": zod.array(zod.object({
+  "post_id": zod.string(),
+  "title": zod.string(),
+  "relation": zod.enum(['liked', 'skipped']),
+  "similarity": zod.number(),
+  "shared_topics": zod.array(zod.string()).optional()
+}).describe('A post the user already reacted to that this one is compared with.'))
+}).describe('Built only from facts we hold (Interest DNA, tags, posts the user liked or\nskipped, learned rules); a referenced post is always a real one they reacted to.\n').nullish().describe('Plain-language account of why this is in the feed (personalized feed only).')
 })
 export const GetUserPairResponse = zod.array(GetUserPairResponseItem)
 

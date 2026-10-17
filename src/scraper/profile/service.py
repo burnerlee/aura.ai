@@ -50,6 +50,7 @@ from scraper.profile.dna import (
     reconcile,
     seed_dna,
 )
+from scraper.profile.insight import UserPost, build_insight, unit
 from scraper.profile.patterns import (
     build_snapshot,
     merge_mined,
@@ -88,6 +89,8 @@ _DNA_EVENTS = frozenset(
 _MINING_WINDOW = 200  # most recent reactions considered when mining patterns
 _DNA_QUERY_THEMES = 4  # top DNA themes that also act as retrieval queries
 _DNA_QUERY_WEIGHT = 0.3  # their combined weight next to state / centroids / persona
+_INSIGHT_LIKED = 30  # most recent liked / skipped posts a "why this" can point back to
+_INSIGHT_SKIPPED = 20
 
 
 @dataclass
@@ -663,6 +666,57 @@ class UserProfileService:
             )
         return out
 
+    def _reacted_posts(self, post_ids: list[str]) -> list[UserPost]:
+        """Posts the user reacted to, with titles, topic tags and doc embeddings.
+
+        Two batched lookups (Mongo, then Qdrant) no matter how many posts.
+        """
+        docs = self.store.get_many_by_ids(post_ids)
+        points = {
+            point_id_for(str(doc["source"]), str(doc["external_id"])): pid
+            for pid, doc in docs.items()
+            if doc.get("source") and doc.get("external_id")
+        }
+        if not points:
+            return []
+        out: list[UserPost] = []
+        for record in self.vectors.fetch(list(points), with_vectors=["doc"]):
+            vector = record.vector.get("doc") if isinstance(record.vector, dict) else None
+            doc = docs.get(points.get(str(record.id), ""))
+            if vector is None or doc is None:
+                continue
+            title = (doc.get("title") or "").strip() or str(doc.get("summary") or "").strip()
+            if not title:
+                continue
+            out.append(
+                UserPost(
+                    post_id=str(doc["_id"]),
+                    title=title,
+                    vector=unit(vector),
+                    topic_ids=frozenset(
+                        t for t in doc.get("tag_ids") or [] if str(t).startswith("topic:")
+                    ),
+                )
+            )
+        return out
+
+    def _attach_insights(self, profile: UserProfile, results: list[ScoredPost]) -> None:
+        """Give every result a plain-language, evidence-based reason it is in the feed."""
+        if not results:
+            return
+        liked = self._reacted_posts(profile.positive_ids[-_INSIGHT_LIKED:])
+        skipped = self._reacted_posts(profile.negative_ids[-_INSIGHT_SKIPPED:])
+        resolver = self._resolver(embed=False)
+
+        def label(tag_id: str) -> str:
+            tag = resolver.by_id(tag_id) if resolver is not None else None
+            return tag.label if tag is not None else humanize(tag_id)
+
+        for result in results:
+            result.insight = build_insight(
+                result, dna=profile.dna, liked=liked, skipped=skipped, label=label
+            )
+
     def negative_set(self, profile: UserProfile) -> list[list[float]]:
         out: list[list[float]] = []
         for pid in profile.negative_ids[-30:]:
@@ -703,7 +757,7 @@ class UserProfileService:
             muted_sources=profile.persona.muted_sources or None,
             max_words=profile.persona.max_words,
         )
-        return self.engine.recommend(
+        results = self.engine.recommend(
             query_set,
             filters=filters,
             k=k,
@@ -713,6 +767,8 @@ class UserProfileService:
             explain=explain,
             persona_text=profile.persona.summary,
         )
+        self._attach_insights(profile, results)
+        return results
 
     def pair(self, user_id: str) -> list[ScoredPost]:
         """Two candidates from different interest centroids for pairwise cards."""

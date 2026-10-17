@@ -63,6 +63,28 @@ export interface PostMatch {
   flags: MatchFlag[];
 }
 
+/** A post the user already reacted to that this one is being compared with. */
+export interface InsightRef {
+  postId: string;
+  title: string;
+  relation: "liked" | "skipped";
+  similarity: number;
+  sharedTopics: string[];
+}
+
+export interface InsightReason {
+  kind: string;
+  text: string;
+}
+
+/** Why a post is in the feed, built server-side only from facts about this user. */
+export interface PostInsight {
+  headline: string;
+  summary: string;
+  reasons: InsightReason[];
+  references: InsightRef[];
+}
+
 export type ServerDnaRuleKind =
   | "topic"
   | "style"
@@ -111,6 +133,8 @@ export interface FeedPost {
   canonicalTags?: PostTag[];
   /** Relative match from the server; absent in demo mode. */
   match?: PostMatch;
+  /** Plain-language reasons this post is in the feed; personalized feed only. */
+  insight?: PostInsight;
   author: Author;
   publishedAt: string;
   title?: string;

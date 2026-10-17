@@ -603,6 +603,11 @@ components:
           allOf:
             - $ref: "#/components/schemas/MatchInfo"
           nullable: true
+        insight:
+          allOf:
+            - $ref: "#/components/schemas/MatchInsight"
+          nullable: true
+          description: Plain-language account of why this is in the feed (personalized feed only).
       required:
         - id
         - kind
@@ -1173,3 +1178,62 @@ components:
         negative:
           type: integer
       required: [kind, key, label, seen, negative]
+
+    InsightPostRef:
+      type: object
+      description: A post the user already reacted to that this one is compared with.
+      properties:
+        post_id:
+          type: string
+        title:
+          type: string
+        relation:
+          type: string
+          enum: [liked, skipped]
+        similarity:
+          type: number
+        shared_topics:
+          type: array
+          items:
+            type: string
+      required: [post_id, title, relation, similarity]
+
+    InsightReason:
+      type: object
+      properties:
+        kind:
+          type: string
+          enum:
+            - theme
+            - attribution
+            - similar_liked
+            - shared_topics
+            - affinity
+            - caution
+            - similar_skipped
+            - fresh
+            - variety
+            - cold_start
+        text:
+          type: string
+      required: [kind, text]
+
+    MatchInsight:
+      type: object
+      description: |
+        Built only from facts we hold (Interest DNA, tags, posts the user liked or
+        skipped, learned rules); a referenced post is always a real one they reacted to.
+      properties:
+        headline:
+          type: string
+        summary:
+          type: string
+        reasons:
+          type: array
+          items:
+            $ref: "#/components/schemas/InsightReason"
+        references:
+          type: array
+          items:
+            $ref: "#/components/schemas/InsightPostRef"
+      required: [headline, summary, reasons, references]

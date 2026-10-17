@@ -238,6 +238,7 @@ class RecommendationEngine:
                 per_query_scores=per_query[pid],
                 reason=reasons[pid],
                 match=match_infos[pid],
+                doc_vector=doc_centroids[pid],
             )
             for pid in selected
         ]
