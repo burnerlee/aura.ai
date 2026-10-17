@@ -196,6 +196,8 @@ def _platform(raw: dict[str, Any]) -> str | None:
     source = str(raw.get("source") or "").lower()
     if source == "substack":
         return "Substack"
+    if source == "reddit":
+        return "Reddit"
     return None
 
 
@@ -221,6 +223,9 @@ def mongo_to_card(
     handle = f"@{source}"
     if (author_raw or {}).get("external_id"):
         handle = f"@{(author_raw or {})['external_id']}"
+    meta_raw = raw.get("metadata") if isinstance(raw.get("metadata"), dict) else {}
+    if source == "reddit" and (meta_raw or {}).get("subreddit"):
+        handle = f"r/{meta_raw['subreddit']}"
 
     title = (raw.get("title") or "").strip() or None
     body = (

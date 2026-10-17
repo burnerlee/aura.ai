@@ -26,3 +26,6 @@ htmlcov/
 data/
 *.jsonl
 !scripts/**
+
+# Node / pnpm (workspace-local store can be created during installs)
+.pnpm-store/

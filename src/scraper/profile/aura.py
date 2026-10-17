@@ -26,8 +26,12 @@ Conversation style:
 - Suggest 2–4 new theme ideas as the conversation progresses (short labels, e.g. "indie games",
   "deep space", "practical AI", "synthwave").
 - Reflect back what you heard so the user feels understood.
-- After enough signal (usually 3–5 exchanges), or when the user says they're ready / done /
+- After enough signal (usually 2–3 exchanges), or when the user says they're ready / done /
   "build my profile", set ready=true and fill the profile object.
+- Every ready profile is applied to the feed immediately. When the user already has a
+  current profile and asks for a change ("more X", "less Y", "drop Z", a new interest),
+  set ready=true in that same turn with the full updated profile: keep what still holds,
+  apply the change, and say in one line what you changed. Don't ask a follow-up first.
 
 Profile rules (when ready=true):
 - prompt: a natural first-person interest summary (1–3 sentences) Aura will use as the signal.
@@ -299,8 +303,13 @@ def chat_with_aura(
     llm: LLMClient | None = None,
     fallback_llm: LLMClient | None = None,
     prior_messages: list[AuraChatMessage] | None = None,
+    current_profile: str | None = None,
 ) -> AuraTurn:
-    """Run one Aura turn. Empty history returns the opening (or welcome-back) message."""
+    """Run one Aura turn. Empty history returns the opening (or welcome-back) message.
+
+    ``current_profile`` describes what the feed is tuned to right now, so refinements
+    edit it instead of starting over.
+    """
     themes = [t.strip() for t in (known_themes or []) if t and t.strip()]
     prior = list(prior_messages or [])
     context = merge_conversation_context(prior, messages)
@@ -327,9 +336,15 @@ def chat_with_aura(
         if (prior and not messages)
         else ""
     )
+    profile_line = (
+        f"The user's current profile (what their feed is tuned to now):\n{current_profile}\n\n"
+        if current_profile
+        else ""
+    )
     prompt = (
         f"{AURA_SYSTEM_PROMPT}\n\n"
         f"Known corpus themes (prefer when relevant): {theme_line}\n\n"
+        f"{profile_line}"
         f"{resume_note}"
         f"Conversation so far (includes stored memory):\n{history}\n\n"
         "Produce the next AuraTurn JSON."

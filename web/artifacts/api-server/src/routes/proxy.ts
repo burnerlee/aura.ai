@@ -4,13 +4,19 @@
 
 import { Router, type IRouter, type Request, type Response } from "express";
 import { logger } from "../lib/logger";
+import { upstreamBase } from "../lib/upstream";
 
 const router: IRouter = Router();
 
-function upstreamBase(): string {
-  const raw =
-    process.env["RECOMMENDATION_API_URL"] ?? "http://127.0.0.1:8000";
-  return raw.replace(/\/$/, "");
+/** FastAPI routes only the BFF itself may call (it adds the internal token). */
+function isBffOnly(path: string): boolean {
+  let decoded = path;
+  try {
+    decoded = decodeURIComponent(path);
+  } catch {
+    // keep the raw path
+  }
+  return decoded.toLowerCase().includes("/identity/google/");
 }
 
 /**
@@ -21,11 +27,23 @@ router.all("/{*splat}", async (req: Request, res: Response) => {
   const base = upstreamBase();
   // req.originalUrl includes /api prefix + query string
   const upstreamPath = req.originalUrl.replace(/^\/api/, "") || "/";
+  if (isBffOnly(upstreamPath)) {
+    res.status(404).json({ detail: "Not found" });
+    return;
+  }
   const target = `${base}${upstreamPath}`;
+
+  const anonId = String(res.locals["aura_uid"] || "").trim();
+  const accountId = String(res.locals["aura_aid"] || "").trim();
+  const effectiveUserId = accountId || anonId;
 
   const headers: Record<string, string> = {
     accept: req.get("accept") || "application/json",
   };
+  if (effectiveUserId) {
+    headers["x-aura-userid"] = effectiveUserId;
+  }
+
   const contentType = req.get("content-type");
   if (contentType) {
     headers["content-type"] = contentType;

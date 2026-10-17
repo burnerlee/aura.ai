@@ -36,17 +36,16 @@ def get_indexing_client(settings: Settings | None = None) -> LLMClient:
 def get_inference_client(settings: Settings | None = None) -> LLMClient:
     """Client for onboard / persona / rerank.
 
-    Prefers free-tier Gemini. Falls back to LiteLLM when Gemini is unset.
+    Prefers LiteLLM (paid gateway): free-tier Gemini quota runs out mid-session and
+    every rerank / persona refresh then silently falls back. Gemini when LiteLLM is unset.
     """
     settings = settings or get_settings()
-    if settings.gemini_api_key:
-        logger.debug("Inference client: Gemini (%s)", settings.gemini_llm_model)
-        return GeminiClient(settings)
     if settings.litellm_api_key:
-        logger.warning(
-            "GEMINI_API_KEY unset — user inference via LiteLLM"
-        )
+        logger.debug("Inference client: LiteLLM (%s)", settings.litellm_llm_model)
         return LiteLLMClient(settings)
+    if settings.gemini_api_key:
+        logger.warning("LITELLM_API_KEY unset — user inference via free-tier Gemini")
+        return GeminiClient(settings)
     raise RuntimeError(
         "Set GEMINI_API_KEY (preferred for user inference) or LITELLM_API_KEY."
     )

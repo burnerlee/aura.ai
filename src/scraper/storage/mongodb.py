@@ -58,6 +58,10 @@ class MongoDocumentStore:
         ]
 
     @property
+    def accounts(self) -> Collection:
+        return self.client[self.settings.mongo_db][self.settings.mongo_accounts_collection]
+
+    @property
     def tags(self) -> Collection:
         return self.client[self.settings.mongo_db][self.settings.mongo_tags_collection]
 
@@ -103,6 +107,17 @@ class MongoDocumentStore:
         self.interactions.create_index(
             [("user_id", ASCENDING), ("post_id", ASCENDING)],
             name="user_post",
+        )
+
+        self.accounts.create_index(
+            [("provider", ASCENDING), ("subject", ASCENDING)],
+            unique=True,
+            name="uniq_provider_subject",
+        )
+        self.accounts.create_index(
+            [("account_id", ASCENDING)],
+            unique=True,
+            name="uniq_account_id",
         )
         logger.info("Ensured MongoDB indexes on %s", self.settings.mongo_db)
 
@@ -239,6 +254,75 @@ class MongoDocumentStore:
             .limit(limit)
         )
         return list(cursor)
+
+    def list_discover_diverse(
+        self,
+        *,
+        limit: int = 40,
+        ready_only: bool = True,
+    ) -> list[dict[str, Any]]:
+        """Discover listing that interleaves sources so one connector can't crowd others out.
+
+        This is still "popularity / recency" per source; we just compose a slate by
+        round-robin interleaving the top results from each source.
+        """
+        if limit <= 0:
+            return []
+        base: dict[str, Any] = {}
+        if ready_only:
+            base["embedding_status"] = EmbeddingStatus.READY.value
+
+        sources = [
+            s
+            for s in self.collection.distinct("source", base)
+            if isinstance(s, str) and s.strip()
+        ]
+        if not sources:
+            return []
+
+        per_source = max(5, int(limit * 1.5))
+        pools: dict[str, list[dict[str, Any]]] = {}
+        for src in sources:
+            docs = list(
+                self.collection.find({**base, "source": src}).sort(
+                    [
+                        ("reaction_count", DESCENDING),
+                        ("published_at", DESCENDING),
+                        ("scraped_at", DESCENDING),
+                    ]
+                ).limit(per_source)
+            )
+            if docs:
+                pools[src] = docs
+
+        if not pools:
+            return []
+
+        # Prefer sources whose top post is more "popular", but always interleave.
+        ordered_sources = sorted(
+            pools,
+            key=lambda s: (-(pools[s][0].get("reaction_count") or 0), s),
+        )
+
+        out: list[dict[str, Any]] = []
+        seen: set[str] = set()
+        while len(out) < limit:
+            progressed = False
+            for src in ordered_sources:
+                if not pools.get(src):
+                    continue
+                doc = pools[src].pop(0)
+                doc_id = str(doc.get("_id") or "")
+                if not doc_id or doc_id in seen:
+                    continue
+                seen.add(doc_id)
+                out.append(doc)
+                progressed = True
+                if len(out) >= limit:
+                    break
+            if not progressed:
+                break
+        return out
 
     def count(self, source: str | None = None) -> int:
         filt: dict[str, Any] = {}

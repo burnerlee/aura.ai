@@ -24,6 +24,7 @@ class Settings(BaseSettings):
     mongo_users_collection: str = "users"
     mongo_interactions_collection: str = "interactions"
     mongo_tags_collection: str = "tags"
+    mongo_accounts_collection: str = "accounts"
 
     http_timeout_seconds: float = 30.0
     http_user_agent: str = "content-scraper/0.1 (+https://github.com/devrev/data)"
@@ -42,7 +43,9 @@ class Settings(BaseSettings):
     # LiteLLM (preferred for indexing embeds + facet extraction)
     litellm_api_key: str | None = None
     litellm_api_base: str | None = None
-    litellm_embedding_model: str = "gemini/gemini-embedding-001"
+    # The whole corpus, every user vector and every query must share this one model.
+    # Changing it requires re-embedding everything (`make reembed`).
+    litellm_embedding_model: str = "openai/text-embedding-3-small"
     litellm_llm_model: str = "openai/gemini-2.5-flash"
     # Upper bound only. Thinking models spend part of it on reasoning before the JSON.
     llm_max_output_tokens: int = 8192
@@ -60,9 +63,16 @@ class Settings(BaseSettings):
 
     # Query engine
     filter_k: int = 64
-    mmr_lambda: float = 0.7
+    # Share of the fit score taken from whole-post (doc) similarity vs chunk MaxSim.
+    doc_similarity_weight: float = 0.5
+    mmr_lambda: float = 0.85
     author_diversity_cap: int = 3
+    # Largest share of one recommendation slate a single source may take, so one
+    # connector (e.g. Substack) cannot crowd out the others (e.g. Reddit).
+    source_max_share: float = 0.6
     recency_half_life_days: float = 30.0
+    # How much of the score recency can take away (0 = ignore age, 1 = full decay).
+    recency_weight: float = 0.1
     negative_penalty_scale: float = 0.35
 
     # Profile
@@ -78,6 +88,9 @@ class Settings(BaseSettings):
     # API
     api_host: str = "0.0.0.0"
     api_port: int = 8000
+
+    # Shared secret the Express BFF sends on BFF-only routes (account linking).
+    aura_internal_token: str | None = None
 
     def build_mongo_uri(self) -> str:
         if self.mongo_uri:

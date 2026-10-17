@@ -15,6 +15,7 @@ import {
   importUserDna,
   patchUserDna,
   postUserEvents,
+  resetUserProfile,
   searchPosts,
   similarPosts,
   tuneUser,
@@ -331,9 +332,10 @@ export function useRecommendationFeed(demoPosts: FeedPost[]) {
       };
       try {
         const res = await chatWithAura(userId, body);
-        if (apply && res.ready) {
+        // The server applies every ready turn, so the feed behind the chat is already retuned.
+        if (res.ready && res.dna) {
           localStorage.setItem(`aura:onboarded:${userId}`, "1");
-          if (res.dna) queryClient.setQueryData(dnaKey, res.dna);
+          queryClient.setQueryData(dnaKey, res.dna);
           void queryClient.invalidateQueries({ queryKey: ["feed", userId] });
         }
         return mapAuraResponse(res);
@@ -439,6 +441,18 @@ export function useRecommendationFeed(demoPosts: FeedPost[]) {
     setSimilarSeedId(null);
   }, []);
 
+  /** Forget everything the server learned about this user, then refetch a cold-start feed. */
+  const resetProfile = useCallback(async () => {
+    if (demo) return;
+    await resetUserProfile(userId);
+    localStorage.removeItem(`aura:onboarded:${userId}`);
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: dnaKey }),
+      queryClient.invalidateQueries({ queryKey: ["feed", userId] }),
+      queryClient.invalidateQueries({ queryKey: ["profile", userId] }),
+    ]);
+  }, [demo, dnaKey, queryClient, userId]);
+
   return {
     demo,
     userId,
@@ -469,5 +483,6 @@ export function useRecommendationFeed(demoPosts: FeedPost[]) {
     preferPair,
     loadSimilar,
     clearSimilar,
+    resetProfile,
   };
 }

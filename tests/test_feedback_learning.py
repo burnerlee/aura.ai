@@ -343,6 +343,25 @@ def test_resonate_raises_the_theme_and_passive_events_leave_the_dna_alone():
     )
 
 
+def test_resonate_is_a_toggle_second_click_undos_the_like():
+    posts = {
+        "a": _post("a", canonical_tags=[{"id": "theme:space", "label": "Space", "kind": "theme"}])
+    }
+    service, _, _ = _seeded_service(posts)
+    before = service.get_dna("u1")
+
+    service.record_event_outcome(_event("u1", "a", EventType.LIKE, strength=2, match_percent=50))
+    liked = service.get_dna("u1")
+    assert liked.weights["theme:space"] == pytest.approx(
+        before.weights["theme:space"] + 7.0, abs=0.25
+    )
+
+    # Sending LIKE again for the same post should toggle it off and undo the DNA delta.
+    service.record_event_outcome(_event("u1", "a", EventType.LIKE, strength=2, match_percent=50))
+    unliked = service.get_dna("u1")
+    assert unliked.weights["theme:space"] == pytest.approx(before.weights["theme:space"], abs=0.35)
+
+
 def test_repeated_skips_of_one_style_surface_chips_then_a_proposal():
     posts = {f"n{i}": _post(f"n{i}", style="listicle") for i in range(3)}
     posts |= {f"y{i}": _post(f"y{i}", style="analytical") for i in range(3)}
@@ -405,9 +424,45 @@ def test_dna_themes_become_retrieval_queries_weighted_by_share():
     profile = service.get_or_create("u1")
     vectors = service._dna_query_vectors(profile)
     assert {v.label for v in vectors} == {"AI", "Space"}
-    assert sum(v.weight for v in vectors) == pytest.approx(0.3)
+    assert sum(v.weight for v in vectors) == pytest.approx(0.25)
     ai = next(v for v in vectors if v.label == "AI")
     assert ai.weight > next(v for v in vectors if v.label == "Space").weight  # 60 vs 40
 
     # With nothing else known about the user, the DNA alone makes a usable query set.
     assert len(service.build_query_set(profile)) == 2
+
+
+def test_one_like_does_not_drown_what_the_user_told_aura():
+    service, users, _ = _seeded_service({})
+    resolver = service.tags.resolver.return_value
+    resolver._by_id["theme:ai"].embedding = [1.0, 0.0]
+    resolver._by_id["theme:space"].embedding = [0.0, 1.0]
+    profile = service.get_or_create("u1")
+    profile.persona_vector = [0.5, 0.5]
+    profile.state_vector = [0.0, 1.0]
+    profile.positive_ids = ["p1"]
+
+    vectors = service.build_query_set(profile).vectors
+    behaviour = sum(v.weight for v in vectors if v.kind.value in {"state", "centroid"})
+    assert behaviour == pytest.approx(0.08)
+    assert sum(v.weight for v in vectors) == pytest.approx(1.0)
+
+    profile.positive_ids = [f"p{i}" for i in range(20)]
+    vectors = service.build_query_set(profile).vectors
+    behaviour = sum(v.weight for v in vectors if v.kind.value in {"state", "centroid"})
+    assert behaviour == pytest.approx(0.6)
+
+
+def test_custom_dna_themes_still_steer_retrieval():
+    service, _, _ = _service({})
+    service.client.embed_query.return_value = [0.3, 0.7]
+    profile = service.get_or_create("u1")
+    key = "custom:basket-weaving"
+    profile.dna = profile.dna.model_copy(
+        update={"weights": {key: 100.0}, "labels": {key: "basket weaving"}}
+    )
+
+    vectors = service._dna_query_vectors(profile)
+    assert [(v.label, v.vector) for v in vectors] == [("basket weaving", [0.3, 0.7])]
+    service._dna_query_vectors(profile)
+    service.client.embed_query.assert_called_once_with("basket weaving")

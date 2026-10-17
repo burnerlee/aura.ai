@@ -477,6 +477,8 @@ explain?: boolean;
 
 export type GetUserProfile200 = { [key: string]: unknown };
 
+export type ResetUserProfile200 = { [key: string]: unknown };
+
 export type ListTagsParams = {
 kind?: TagKind;
 /**

@@ -317,6 +317,94 @@ def embed_cmd(
     console.print_json(json.dumps(summary))
 
 
+@app.command("reembed")
+def reembed_cmd() -> None:
+    """Move every post and user vector onto the configured embedding model."""
+    from scraper.embedding.worker import run_reembed
+    from scraper.profile.service import UserProfileService
+
+    summary = run_reembed()
+    service = UserProfileService()
+    users = [doc["user_id"] for doc in service.store.users.find({}, {"user_id": 1})]
+    for user_id in users:
+        service.rebuild_vectors(user_id)
+    summary["users"] = len(users)
+    console.print_json(json.dumps(summary))
+
+
+@app.command("feed-check")
+def feed_check_cmd(
+    k: int = typer.Option(20, "--k", "-k", help="Feed size per persona."),
+) -> None:
+    """Sanity-check personalization: distinct personas and a chat refinement move the feed."""
+    from collections import Counter
+
+    from scraper.profile.aura import AuraProfileDraft
+    from scraper.profile.service import UserProfileService
+
+    personas = {
+        "mind": AuraProfileDraft(
+            prompt="How the brain works, memory, emotions and why people behave as they do.",
+            topics=["neuroscience", "psychology", "human behavior"],
+            themes=["neuroscience", "psychology", "human behavior"],
+            anti_topics=["politics"],
+        ),
+        "markets": AuraProfileDraft(
+            prompt="Investing, startups and how economies actually work.",
+            topics=["investing", "economics", "startups"],
+            themes=["investing", "economics", "startups"],
+            anti_topics=["celebrity gossip"],
+        ),
+    }
+    refined = AuraProfileDraft(
+        prompt="Less psychology now; I want space, astronomy and planetary science.",
+        topics=["space", "astronomy", "neuroscience"],
+        themes=["space", "astronomy", "neuroscience"],
+        anti_topics=["politics", "psychology"],
+    )
+
+    service = UserProfileService()
+
+    def run(user_id: str, draft: AuraProfileDraft) -> list[dict]:
+        service.apply_aura_profile(user_id, draft)
+        ids = [r.post_id for r in service.feed(user_id, k=k)]
+        docs = service.store.get_many_by_ids(ids)
+        return [docs[i] for i in ids if i in docs]
+
+    def show(name: str, docs: list[dict]) -> None:
+        sources = Counter(str(d.get("source")) for d in docs)
+        console.print(f"\n[bold]{name}[/bold]  sources={dict(sources)}")
+        for d in docs[:8]:
+            console.print(f"  [dim]{d.get('source'):>8}[/dim]  {(d.get('title') or '')[:90]}")
+
+    def overlap(a: list[dict], b: list[dict]) -> float:
+        ids_a, ids_b = {str(d["_id"]) for d in a}, {str(d["_id"]) for d in b}
+        return len(ids_a & ids_b) / max(1, min(len(ids_a), len(ids_b)))
+
+    temp_ids = [f"feed-check-{name}" for name in personas]
+    try:
+        feeds = {name: run(f"feed-check-{name}", d) for name, d in personas.items()}
+        for name, docs in feeds.items():
+            show(name, docs)
+        after = run("feed-check-mind", refined)
+        show("mind, after asking Aura for space instead of psychology", after)
+        console.print(
+            f"\noverlap mind vs markets: {overlap(feeds['mind'], feeds['markets']):.0%}"
+            f"\noverlap mind before vs after refinement: {overlap(feeds['mind'], after):.0%}"
+        )
+    finally:
+        for user_id in temp_ids:
+            service.store.users.delete_one({"user_id": user_id})
+
+
+@app.command("prune")
+def prune_cmd() -> None:
+    """Drop indexed posts that the current adapters would skip (e.g. Reddit mod threads)."""
+    from scraper.embedding.worker import run_prune
+
+    console.print_json(json.dumps(run_prune()))
+
+
 @app.command("embed-status")
 def embed_status_cmd(
     source: str | None = typer.Option(None, "--source", "-s"),

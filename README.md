@@ -70,7 +70,7 @@ scraper serve                 # http://localhost:8000/docs
 
 # Web UI (three terminals)
 make serve                    # Python API :8000
-make web-api                  # Express BFF :5000 → :8000
+make web-api                  # Express BFF :5001 → :8000
 make web-ui                   # aura-web :5173 (proxy /api → BFF)
 # Offline UI only: make web-ui-demo   # VITE_USE_DEMO=1
 ```
@@ -83,7 +83,24 @@ make web-ui                   # aura-web :5173 (proxy /api → BFF)
 4. Resonate / banish updates signal; Discover lists popular/ready posts
 5. Create a short post → toast “indexing…” → later appears in search/Discover
 6. Waves icon → pairwise pick; **More like this** on a card
-7. Avatar copies anonymous `user_id`; `make web-ui-demo` still works offline
+7. Avatar menu → **Continue with Google** keeps your Interest DNA; `make web-ui-demo` still works offline
+
+### Identity and Google sign-in
+
+Every visitor gets an anonymous, server-minted `aura_uid` cookie from the Express BFF; all feed
+state is keyed on it with no login. Signing in with Google (avatar menu) maps the Google account
+to a permanent `account_id` and merges the anonymous profile into it, so nothing curated before
+sign-in is lost. The BFF owns all cookies and injects `X-Aura-UserId` upstream; FastAPI must not
+be exposed directly.
+
+Setup:
+
+1. Google Cloud Console → APIs & Services → Credentials → OAuth client ID (Web application).
+2. Add `http://localhost:5173/api/auth/google/callback` as an authorized redirect URI.
+3. In `.env`, set `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `AURA_COOKIE_SECRET` and
+   `AURA_INTERNAL_TOKEN` (the last two: `openssl rand -hex 32`).
+4. Restart `make serve` and `make web-api`. Open the app at `http://localhost:5173` (not a LAN IP),
+   so the redirect URI matches.
 
 
 ## Makefile targets
@@ -94,6 +111,9 @@ make web-ui                   # aura-web :5173 (proxy /api → BFF)
 | `make mongo-up` / `qdrant-up` | Start services |
 | `make scrape-substack` / `discover` | Scrape |
 | `make embed` / `embed-status` | Embedding worker |
+| `make reembed` | Move every post + user vector onto `LITELLM_EMBEDDING_MODEL` (run after changing it) |
+| `scraper prune` | Drop indexed posts the adapters now skip (e.g. Reddit mod / recurring threads) |
+| `scraper feed-check` | Personalization smoke test: two personas + a chat refinement, with overlap and source mix |
 | `make tags` | Build the canonical tag vocabulary + themes from facets and tag every post |
 | `make search QUERY=…` | Semantic search |
 | `make serve` | FastAPI recommendation API |
@@ -108,7 +128,11 @@ See `.env.example`. Important vars:
 | Variable | Default | Notes |
 |----------|---------|-------|
 | `GEMINI_API_KEY` | _(required)_ | Google AI Studio / Gemini API key |
-| `GEMINI_EMBEDDING_MODEL` | `gemini-embedding-2` | |
+| `GEMINI_EMBEDDING_MODEL` | `gemini-embedding-2` | Only used when `LITELLM_API_KEY` is unset |
+| `LITELLM_EMBEDDING_MODEL` | `openai/text-embedding-3-small` | The one model for corpus, users and queries. No fallback: mixed models make scores meaningless |
+| `SOURCE_MAX_SHARE` | `0.6` | Max share of a feed one source may take (only relevant posts fill freed slots) |
+| `DOC_SIMILARITY_WEIGHT` | `0.5` | Blend of whole-post similarity into chunk MaxSim |
+| `RECENCY_WEIGHT` | `0.1` | Max share of a score recency decay can remove; higher values rank by freshness, not interest |
 | `GEMINI_LLM_MODEL` | `gemini-2.5-flash` | Facets + persona + Aura chat |
 | `EMBEDDING_DIM` | `768` | MRL truncation |
 | `QDRANT_URL` | `http://localhost:6333` | |

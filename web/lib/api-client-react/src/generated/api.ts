@@ -42,6 +42,7 @@ import type {
   OnboardRequest,
   Persona,
   PersonaVersionResponse,
+  ResetUserProfile200,
   SearchRequest,
   SimilarPostsParams,
   Tag,
@@ -1166,6 +1167,80 @@ export function useGetUserProfile<TData = Awaited<ReturnType<typeof getUserProfi
 
 
 
+
+export const getResetUserProfileUrl = (userId: string,) => {
+
+
+
+
+  return `/api/users/${userId}/profile/reset`
+}
+
+/**
+ * @summary Forget everything learned about this user (DNA, persona, reactions, Aura memory)
+ */
+export const resetUserProfile = async (userId: string, options?: Parameters<typeof customFetch>[1]): Promise<ResetUserProfile200> => {
+
+  return customFetch<ResetUserProfile200>(getResetUserProfileUrl(userId),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+
+export const getResetUserProfileMutationKey = () => ['resetUserProfile'] as const;
+
+export const getResetUserProfileMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof resetUserProfile>>, TError,ResetUserProfileMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof resetUserProfile>>, TError,ResetUserProfileMutationVariables, TContext> => {
+
+const mutationKey = getResetUserProfileMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof resetUserProfile>>, ResetUserProfileMutationVariables> = (props) => {
+          const {userId} = props ?? {};
+
+          return  resetUserProfile(userId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ResetUserProfileMutationResult = NonNullable<Awaited<ReturnType<typeof resetUserProfile>>>
+
+    export type ResetUserProfileMutationError = ErrorType<unknown>
+    export type ResetUserProfileMutationVariables = {userId: string}
+
+    /**
+ * @summary Forget everything learned about this user (DNA, persona, reactions, Aura memory)
+ */
+export const useResetUserProfile = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof resetUserProfile>>, TError,ResetUserProfileMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof resetUserProfile>>,
+        TError,
+        ResetUserProfileMutationVariables,
+        TContext
+      > => {
+      return useMutation(getResetUserProfileMutationOptions(options));
+    }
 
 export const getOnboardUserUrl = (userId: string,) => {
 

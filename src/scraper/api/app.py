@@ -4,10 +4,15 @@
 
 from __future__ import annotations
 
+import secrets
+import uuid
+from datetime import UTC, datetime
 from typing import Any
 
-from fastapi import BackgroundTasks, FastAPI, HTTPException, Query
+from fastapi import BackgroundTasks, FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
+from pymongo import ReturnDocument
 
 from scraper.api.cards import FeedCard, mongo_to_card
 from scraper.api.posts import (
@@ -27,6 +32,7 @@ from scraper.api.schemas import (
     SearchRequest,
     TuneRequest,
 )
+from scraper.config import get_settings
 from scraper.embedding.worker import embed_by_ids
 from scraper.models.tag import TagKind
 from scraper.models.user import DNAPatch, EventType, Interaction
@@ -38,6 +44,50 @@ from scraper.query.types import Filters
 from scraper.tags.service import TagService
 
 
+class _StripApiPrefixMiddleware:
+    """Allow serving behind a `/api` prefix without 404s.
+
+    In the standard stack, the Express BFF strips `/api` before proxying to FastAPI.
+    If the UI (or another proxy) points directly at FastAPI without stripping, requests
+    land on `/api/*`. This middleware rewrites paths so both forms work.
+    """
+
+    def __init__(self, app: Any) -> None:
+        self.app = app
+
+    async def __call__(self, scope: dict[str, Any], receive: Any, send: Any) -> None:
+        if scope.get("type") == "http":
+            path = str(scope.get("path") or "")
+            if path == "/api":
+                scope = {**scope, "path": "/"}
+            elif path.startswith("/api/"):
+                scope = {**scope, "path": path[4:] or "/"}
+        await self.app(scope, receive, send)
+
+def _effective_user_id(request: Request | None, fallback: str | None = None) -> str:
+    """Resolve the canonical user identifier for personalization.
+
+    Preferred: `X-Aura-UserId` injected by the Express BFF (cookie-backed).
+    Fallback: path param (legacy clients / direct FastAPI usage).
+    """
+    if request is not None:
+        header = (request.headers.get("x-aura-userid") or "").strip()
+        if header:
+            return header
+    return (fallback or "").strip() or "anonymous"
+
+
+class GoogleLinkRequest(BaseModel):
+    """Claims from a Google ID token the BFF already validated."""
+
+    subject: str
+    email: str | None = None
+    email_verified: bool = False
+    name: str | None = None
+    picture: str | None = None
+    anonymous_id: str | None = None
+
+
 def create_app(
     *,
     engine: RecommendationEngine | None = None,
@@ -45,6 +95,7 @@ def create_app(
     tags: TagService | None = None,
 ) -> FastAPI:
     app = FastAPI(title="Content Recommendation API", version="0.1.0")
+    app.add_middleware(_StripApiPrefixMiddleware)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=["*"],
@@ -94,8 +145,11 @@ def create_app(
     def create_post(
         body: CreatePostRequest,
         background_tasks: BackgroundTasks,
+        request: Request,
     ) -> CreatePostResponse:
         try:
+            if not body.user_id or body.user_id == "me":
+                body.user_id = _effective_user_id(request, None)
             raw, card = create_user_post(body, store=store)
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -125,25 +179,43 @@ def create_app(
         ready_only: bool = True,
     ) -> list[FeedCard]:
         """Popularity / recency browse (Discover tab) — not personalized ranking."""
-        docs = store.list_discover(limit=k, source=source, ready_only=ready_only)
+        if source:
+            docs = store.list_discover(limit=k, source=source, ready_only=ready_only)
+        else:
+            docs = store.list_discover_diverse(limit=k, ready_only=ready_only)
         return [mongo_to_card(doc) for doc in docs]
 
     @app.get("/users/{user_id}/feed")
-    def feed(user_id: str, k: int = 10, explain: bool = False) -> list[FeedCard]:
-        results = profiles.feed(user_id, k=k, explain=explain)
+    def feed(
+        user_id: str,
+        request: Request,
+        k: int = 10,
+        explain: bool = False,
+    ) -> list[FeedCard]:
+        uid = _effective_user_id(request, user_id)
+        results = profiles.feed(uid, k=k, explain=explain)
         return hydrate_results(store, results)
 
     @app.get("/users/{user_id}/pair")
-    def pair(user_id: str) -> list[FeedCard]:
-        return hydrate_results(store, profiles.pair(user_id))
+    def pair(
+        user_id: str,
+        request: Request,
+    ) -> list[FeedCard]:
+        uid = _effective_user_id(request, user_id)
+        return hydrate_results(store, profiles.pair(uid))
 
     @app.post("/users/{user_id}/events")
-    def events(user_id: str, body: EventsRequest) -> dict[str, Any]:
+    def events(
+        user_id: str,
+        body: EventsRequest,
+        request: Request,
+    ) -> dict[str, Any]:
         # UI mapping: resonate → like, banish → not_interested, bookmark → save.
         # ``post_id`` must be the Mongo ``_id`` string from FeedCard.id.
+        uid = _effective_user_id(request, user_id)
         outcome = None
         for ev in body.events:
-            interaction = Interaction(user_id=user_id, **ev.model_dump())
+            interaction = Interaction(user_id=uid, **ev.model_dump())
             outcome = profiles.record_event_outcome(interaction)
         profile = outcome.profile if outcome else None
         return {
@@ -161,9 +233,14 @@ def create_app(
         }
 
     @app.post("/users/{user_id}/tune")
-    def tune(user_id: str, body: TuneRequest) -> dict[str, Any]:
+    def tune(
+        user_id: str,
+        body: TuneRequest,
+        request: Request,
+    ) -> dict[str, Any]:
+        uid = _effective_user_id(request, user_id)
         interaction = Interaction(
-            user_id=user_id, event=EventType.TUNE, text=body.text
+            user_id=uid, event=EventType.TUNE, text=body.text
         )
         profile = profiles.record_event(interaction)
         return {"persona": profile.persona.model_dump(), "version": profile.persona_version}
@@ -178,13 +255,15 @@ def create_app(
         return tag_service.list_public(kind=kind, limit=limit, min_docs=min_docs)
 
     @app.get("/users/{user_id}/dna")
-    def get_dna(user_id: str) -> dict[str, Any]:
-        return profiles.get_dna(user_id).model_dump(mode="json")
+    def get_dna(user_id: str, request: Request) -> dict[str, Any]:
+        uid = _effective_user_id(request, user_id)
+        return profiles.get_dna(uid).model_dump(mode="json")
 
     @app.patch("/users/{user_id}/dna")
-    def patch_dna(user_id: str, body: DNAPatch) -> dict[str, Any]:
+    def patch_dna(user_id: str, body: DNAPatch, request: Request) -> dict[str, Any]:
+        uid = _effective_user_id(request, user_id)
         try:
-            dna = profiles.patch_dna(user_id, body)
+            dna = profiles.patch_dna(uid, body)
         except DNAVersionConflict as exc:
             raise HTTPException(
                 status_code=409,
@@ -193,10 +272,11 @@ def create_app(
         return dna.model_dump(mode="json")
 
     @app.post("/users/{user_id}/dna/import")
-    def import_dna(user_id: str, body: DNAImportRequest) -> dict[str, Any]:
+    def import_dna(user_id: str, body: DNAImportRequest, request: Request) -> dict[str, Any]:
         """One-time adoption of the browser's local DNA; a no-op if the server has one."""
+        uid = _effective_user_id(request, user_id)
         dna, imported = profiles.import_dna(
-            user_id,
+            uid,
             vector=body.vector,
             prompt=body.prompt,
             excluded=body.excluded_categories,
@@ -204,35 +284,45 @@ def create_app(
         return {"imported": imported, "dna": dna.model_dump(mode="json")}
 
     @app.get("/users/{user_id}/profile")
-    def get_profile(user_id: str) -> dict[str, Any]:
-        profile = profiles.ensure_dna(profiles.get_or_create(user_id))
+    def get_profile(user_id: str, request: Request) -> dict[str, Any]:
+        uid = _effective_user_id(request, user_id)
+        profile = profiles.ensure_dna(profiles.get_or_create(uid))
         # Keep Aura chat memory server-side; UI never needs the transcript.
         data = profile.model_dump()
         data.pop("aura_conversation", None)
         data["conversation_turns"] = len(profile.aura_conversation)
         return data
 
+    @app.post("/users/{user_id}/profile/reset")
+    def reset_profile(user_id: str, request: Request) -> dict[str, Any]:
+        uid = _effective_user_id(request, user_id)
+        profiles.reset(uid)
+        return {"ok": True}
+
     @app.post("/users/{user_id}/onboard")
-    def onboard(user_id: str, body: OnboardRequest) -> dict[str, Any]:
+    def onboard(user_id: str, body: OnboardRequest, request: Request) -> dict[str, Any]:
+        uid = _effective_user_id(request, user_id)
         try:
             profile = profiles.onboard(
-                user_id, free_text=body.free_text, seed_post_ids=body.seed_post_ids
+                uid, free_text=body.free_text, seed_post_ids=body.seed_post_ids
             )
         except Exception as exc:  # noqa: BLE001
             raise HTTPException(status_code=500, detail=str(exc)) from exc
         return profile.persona.model_dump()
 
     @app.post("/users/{user_id}/persona/refresh")
-    def refresh_persona(user_id: str) -> dict[str, Any]:
-        profile = profiles.refresh_persona(user_id)
+    def refresh_persona(user_id: str, request: Request) -> dict[str, Any]:
+        uid = _effective_user_id(request, user_id)
+        profile = profiles.refresh_persona(uid)
         return {
             "persona": profile.persona.model_dump(),
             "version": profile.persona_version,
         }
 
     @app.post("/users/{user_id}/aura/chat")
-    def aura_chat(user_id: str, body: AuraChatRequest) -> dict[str, Any]:
+    def aura_chat(user_id: str, body: AuraChatRequest, request: Request) -> dict[str, Any]:
         """Conversational personalization with Aura."""
+        uid = _effective_user_id(request, user_id)
         messages = [
             AuraChatMessage(role=m.role, content=m.content)  # type: ignore[arg-type]
             for m in body.messages
@@ -245,7 +335,7 @@ def create_app(
         )
         try:
             turn, profile = profiles.aura_chat(
-                user_id,
+                uid,
                 messages=messages,
                 known_themes=body.known_themes,
                 apply=body.apply,
@@ -256,12 +346,65 @@ def create_app(
         payload: dict[str, Any] = turn.model_dump()
         # Conversation text stays on the profile for Aura memory; not returned to UI.
         if profile is not None:
-            if body.apply:
+            # Ready turns were applied server-side; hand back the DNA the feed now uses.
+            if body.apply or turn.ready:
                 payload["persona"] = profile.persona.model_dump()
                 payload["persona_version"] = profile.persona_version
                 payload["dna"] = profile.dna.model_dump(mode="json")
             payload["conversation_turns"] = len(profile.aura_conversation)
         return payload
+
+    # --- Accounts (Google sign-in) ------------------------------------------------
+
+    settings = get_settings()
+
+    def _require_internal(request: Request) -> None:
+        expected = settings.aura_internal_token
+        if not expected:
+            raise HTTPException(status_code=503, detail="AURA_INTERNAL_TOKEN is not configured")
+        provided = request.headers.get("x-aura-internal-token") or ""
+        if not secrets.compare_digest(provided, expected):
+            raise HTTPException(status_code=403, detail="Forbidden")
+
+    @app.post("/identity/google/link")
+    def google_link(body: GoogleLinkRequest, request: Request) -> dict[str, str]:
+        """BFF-only: map a Google subject to an account and fold the anonymous profile in."""
+        _require_internal(request)
+        now = datetime.now(UTC)
+        account = store.accounts.find_one_and_update(
+            {"provider": "google", "subject": body.subject},
+            {
+                "$set": {
+                    "email": body.email,
+                    "email_verified": body.email_verified,
+                    "name": body.name,
+                    "picture": body.picture,
+                    "last_login_at": now,
+                },
+                "$setOnInsert": {
+                    "account_id": f"acct_{uuid.uuid4().hex}",
+                    "created_at": now,
+                },
+            },
+            upsert=True,
+            return_document=ReturnDocument.AFTER,
+        )
+        account_id = str(account["account_id"])
+        anon_id = (body.anonymous_id or "").strip()
+        if anon_id and anon_id != account_id:
+            profiles.merge_profiles(from_user_id=anon_id, to_user_id=account_id)
+        return {"account_id": account_id}
+
+    @app.get("/identity/account")
+    def get_account(request: Request) -> dict[str, Any]:
+        uid = _effective_user_id(request, None)
+        account = store.accounts.find_one(
+            {"account_id": uid},
+            {"_id": 0, "account_id": 1, "email": 1, "name": 1, "picture": 1},
+        )
+        if account is None:
+            raise HTTPException(status_code=404, detail="No account for this session")
+        return account
 
     return app
 

@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import logging
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
 import numpy as np
@@ -15,7 +16,9 @@ from scraper.embedding.chunker import chunk_content
 from scraper.embedding.facets import extract_facets, facets_to_text
 from scraper.llm.base import LLMClient
 from scraper.llm.factory import get_indexing_client
+from scraper.models.document import EmbeddingStatus
 from scraper.models.embeddable import SkipReason
+from scraper.models.facets import PostFacets
 from scraper.storage.mongodb import MongoDocumentStore
 from scraper.storage.qdrant import QdrantVectorStore
 from scraper.tags.vocabulary import TagResolver, tag_refs_for_facets
@@ -47,6 +50,82 @@ def _tag_resolver(
     )
 
 
+def active_embedding_model(settings: Settings) -> str:
+    """The model every vector in the corpus must come from."""
+    if settings.litellm_api_key:
+        return settings.litellm_embedding_model
+    return settings.gemini_embedding_model
+
+
+def _model_key(model: str | None) -> str:
+    """Provider-agnostic model name (``openai/x`` and ``x`` are the same vectors)."""
+    return (model or "").rsplit("/", 1)[-1].strip().lower()
+
+
+def run_prune(
+    *,
+    store: MongoDocumentStore | None = None,
+    vectors: QdrantVectorStore | None = None,
+) -> dict[str, int]:
+    """Re-run adapters over ready posts; drop any they now skip from the index."""
+    store = store or MongoDocumentStore()
+    vectors = vectors or QdrantVectorStore()
+    pruned = 0
+    for raw in store.collection.find({"embedding_status": EmbeddingStatus.READY.value}):
+        src = str(raw.get("source") or "unknown")
+        external_id = str(raw.get("external_id") or "")
+        adapted = get_adapter(src).adapt(raw)
+        if isinstance(adapted, SkipReason):
+            vectors.delete(src, external_id)
+            store.mark_embedding_skipped(src, external_id, adapted.value)
+            pruned += 1
+    return {"pruned": pruned}
+
+
+def run_reembed(
+    *,
+    store: MongoDocumentStore | None = None,
+    vectors: QdrantVectorStore | None = None,
+    client: LLMClient | None = None,
+    settings: Settings | None = None,
+) -> dict[str, Any]:
+    """Re-embed every ready post whose vectors came from a different model.
+
+    Reuses stored facets, so this costs embedding calls only.
+    """
+    settings = settings or get_settings()
+    store = store or MongoDocumentStore(settings)
+    vectors = vectors or QdrantVectorStore(settings)
+    client = client or get_indexing_client(settings)
+    target = _model_key(active_embedding_model(settings))
+    resolver = _tag_resolver(store, client, settings)
+
+    stale = [
+        raw
+        for raw in store.collection.find({"embedding_status": EmbeddingStatus.READY.value})
+        if _model_key(raw.get("embedding_model")) != target
+    ]
+    logger.info("Re-embedding %d posts onto %s", len(stale), target)
+
+    def work(raw: dict[str, Any]) -> str:
+        return _embed_one_raw(
+            raw,
+            store=store,
+            vectors=vectors,
+            client=client,
+            settings=settings,
+            tag_resolver=resolver,
+            reuse_facets=True,
+        )
+
+    summary: dict[str, Any] = {"ready": 0, "skipped": 0, "failed": 0, "processed": len(stale)}
+    with ThreadPoolExecutor(max_workers=max(1, settings.embed_concurrency)) as pool:
+        for status in pool.map(work, stale):
+            summary[status] += 1
+    summary["model"] = target
+    return summary
+
+
 def _embed_one_raw(
     raw: dict[str, Any],
     *,
@@ -55,8 +134,12 @@ def _embed_one_raw(
     client: LLMClient,
     settings: Settings,
     tag_resolver: TagResolver | None = None,
+    reuse_facets: bool = False,
 ) -> str:
-    """Embed a single Mongo document. Returns ``ready`` | ``skipped`` | ``failed``."""
+    """Embed a single Mongo document. Returns ``ready`` | ``skipped`` | ``failed``.
+
+    ``reuse_facets`` keeps already-extracted facets (re-embed without LLM calls).
+    """
     src = str(raw.get("source") or "unknown")
     external_id = str(raw.get("external_id") or "")
     try:
@@ -81,8 +164,12 @@ def _embed_one_raw(
 
         facets = None
         facet_vector = None
-        if settings.facets_enabled:
+        stored_facets = raw.get("facets")
+        if reuse_facets and isinstance(stored_facets, dict) and stored_facets:
+            facets = PostFacets.model_validate(stored_facets)
+        elif settings.facets_enabled:
             facets = extract_facets(adapted, client)
+        if facets is not None:
             facet_text = facets_to_text(facets)
             if facet_text:
                 facet_vector = client.embed_document(facet_text, title=adapted.title)
@@ -114,16 +201,11 @@ def _embed_one_raw(
             image_vector=image_vector,
             payload=payload,
         )
-        embed_model = (
-            settings.litellm_embedding_model
-            if settings.litellm_api_key
-            else settings.gemini_embedding_model
-        )
         store.mark_embedded(
             src,
             external_id,
             embedding_id=point_id,
-            embedding_model=embed_model,
+            embedding_model=active_embedding_model(settings),
             content_hash=adapted.content_hash,
             chunk_count=len(chunks),
             facets=facets.model_dump() if facets else None,
