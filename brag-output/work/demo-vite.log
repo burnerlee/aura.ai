@@ -1,0 +1,195 @@
+
+> @workspace/aura-web@0.0.0 dev /Users/burnerlee/Projects/devrev/data/web/artifacts/aura-web
+> vite --config vite.config.ts --host 0.0.0.0
+
+
+  VITE v7.3.6  ready in 306 ms
+
+  ➜  Local:   http://localhost:5174/
+  ➜  Network: http://192.168.29.241:5174/
+11:07:30 pm [vite] (client) hmr update /src/AuraFeed.tsx
+11:07:30 pm [vite] (client) hmr update /src/AuraFeed.tsx
+11:07:30 pm [vite] (client) hmr update /src/AuraFeed.tsx
+11:07:30 pm [vite] (client) hmr update /src/AuraFeed.tsx
+11:07:30 pm [vite] (client) hmr update /src/AuraFeed.tsx
+11:07:30 pm [vite] (client) page reload /Users/burnerlee/Projects/devrev/data/web/lib/aura-shared/src/interest.ts
+11:07:30 pm [vite] (client) page reload /Users/burnerlee/Projects/devrev/data/web/lib/aura-shared/src/themes.ts
+11:07:30 pm [vite] (client) page reload /Users/burnerlee/Projects/devrev/data/web/lib/aura-shared/src/types.ts
+11:07:30 pm [vite] changed tsconfig file detected: /Users/burnerlee/Projects/devrev/data/web/lib/aura-shared/tsconfig.json - Clearing cache and forcing full-reload to ensure TypeScript is compiled with updated config values.
+11:07:30 pm [vite] (client) page reload index.html
+11:07:30 pm [vite] (client) hmr update /src/App.tsx, /src/index.css
+11:07:30 pm [vite] (client) hmr update /src/AuraFeed.tsx, /src/index.css
+11:07:30 pm [vite] (client) hmr update /src/components/error-boundary.tsx, /src/index.css
+11:07:30 pm [vite] (client) hmr update /src/index.css
+11:07:30 pm [vite] (client) hmr update /src/index.css
+11:07:30 pm [vite] (client) hmr update /src/index.css
+11:07:30 pm [vite] (client) hmr update /src/index.css
+11:07:30 pm [vite] (client) hmr update /src/index.css
+11:07:30 pm [vite] (client) hmr update /src/index.css
+11:07:30 pm [vite] (client) hmr update /src/index.css
+11:07:30 pm [vite] (client) hmr update /src/index.css
+11:07:30 pm [vite] (client) hmr update /src/index.css
+11:07:30 pm [vite] (client) hmr update /src/index.css
+11:07:30 pm [vite] (client) hmr update /src/index.css
+11:07:30 pm [vite] (client) hmr update /src/index.css
+11:07:30 pm [vite] (client) hmr update /src/index.css
+11:07:30 pm [vite] (client) hmr update /src/index.css
+11:07:30 pm [vite] (client) hmr update /src/index.css
+11:07:30 pm [vite] (client) hmr update /src/index.css
+11:07:30 pm [vite] (client) hmr update /src/index.css
+11:07:30 pm [vite] (client) hmr update /src/index.css
+11:07:30 pm [vite] (client) hmr update /src/index.css
+11:07:30 pm [vite] (client) hmr update /src/index.css
+11:07:30 pm [vite] (client) hmr update /src/index.css
+11:07:30 pm [vite] (client) hmr update /src/index.css
+11:07:30 pm [vite] (client) hmr update /src/index.css
+11:07:30 pm [vite] (client) hmr update /src/index.css
+11:07:30 pm [vite] (client) hmr update /src/index.css
+11:07:30 pm [vite] (client) hmr update /src/index.css
+11:07:30 pm [vite] (client) hmr update /src/index.css
+11:07:30 pm [vite] (client) hmr update /src/index.css
+11:07:30 pm [vite] (client) hmr update /src/index.css
+11:07:30 pm [vite] (client) hmr update /src/index.css
+11:07:30 pm [vite] (client) hmr update /src/index.css
+11:07:30 pm [vite] (client) hmr update /src/index.css
+11:07:30 pm [vite] (client) hmr update /src/index.css
+11:07:30 pm [vite] (client) hmr update /src/index.css
+11:07:30 pm [vite] (client) hmr update /src/index.css
+11:07:30 pm [vite] (client) hmr update /src/index.css
+11:07:30 pm [vite] (client) hmr update /src/index.css
+11:07:30 pm [vite] (client) hmr update /src/index.css
+11:07:30 pm [vite] (client) hmr update /src/index.css
+11:07:30 pm [vite] (client) hmr update /src/index.css
+11:07:30 pm [vite] (client) hmr update /src/index.css
+11:07:30 pm [vite] (client) hmr update /src/index.css
+11:07:30 pm [vite] (client) hmr update /src/index.css
+11:07:30 pm [vite] (client) hmr update /src/index.css
+11:07:30 pm [vite] (client) hmr update /src/index.css
+11:07:30 pm [vite] (client) hmr update /src/index.css
+11:07:30 pm [vite] (client) hmr update /src/index.css
+11:07:30 pm [vite] (client) hmr update /src/index.css
+11:07:30 pm [vite] (client) hmr update /src/index.css
+11:07:30 pm [vite] (client) hmr update /src/index.css
+11:07:30 pm [vite] (client) hmr update /src/index.css
+11:07:30 pm [vite] (client) hmr update /src/index.css
+11:07:30 pm [vite] (client) hmr update /src/index.css
+11:07:30 pm [vite] (client) hmr update /src/index.css
+11:07:30 pm [vite] (client) hmr update /src/index.css
+11:07:30 pm [vite] (client) hmr update /src/glass.css, /src/index.css
+11:07:30 pm [vite] (client) hmr update /src/index.css
+11:07:30 pm [vite] (client) page reload src/hooks/use-recommendation-feed.ts
+11:07:30 pm [vite] (client) hmr update /src/index.css
+11:07:30 pm [vite] (client) hmr update /src/index.css
+11:07:30 pm [vite] (client) page reload src/lib/live-mode.ts
+11:07:30 pm [vite] (client) page reload src/lib/user-id.ts
+11:07:30 pm [vite] (client) page reload src/lib/utils.ts
+11:07:30 pm [vite] (client) page reload src/main.tsx
+11:07:30 pm [vite] (client) page reload src/pages/not-found.tsx
+11:07:30 pm [vite] changed tsconfig file detected: /Users/burnerlee/Projects/devrev/data/web/artifacts/aura-web/tsconfig.json - Clearing cache and forcing full-reload to ensure TypeScript is compiled with updated config values.
+11:07:30 pm [vite] (client) page reload tsconfig.json
+11:07:30 pm [vite] vite.config.ts changed, restarting server...
+11:07:30 pm [vite] (client) page reload /Users/burnerlee/Projects/devrev/data/web/lib/api-client-react/src/custom-fetch.ts
+11:07:30 pm [vite] (client) page reload /Users/burnerlee/Projects/devrev/data/web/lib/api-client-react/src/generated/api.schemas.ts
+11:07:30 pm [vite] (client) page reload /Users/burnerlee/Projects/devrev/data/web/lib/api-client-react/src/generated/api.ts
+11:07:30 pm [vite] (client) page reload /Users/burnerlee/Projects/devrev/data/web/lib/api-client-react/src/index.ts
+11:07:30 pm [vite] changed tsconfig file detected: /Users/burnerlee/Projects/devrev/data/web/lib/api-client-react/tsconfig.json - Clearing cache and forcing full-reload to ensure TypeScript is compiled with updated config values.
+✘ [ERROR] Could not resolve "/Users/burnerlee/Projects/devrev/data/web/artifacts/aura-web/vite.config.ts"
+
+failed to load config from /Users/burnerlee/Projects/devrev/data/web/artifacts/aura-web/vite.config.ts
+11:07:30 pm [vite] Build failed with 1 error:
+error: Could not resolve "/Users/burnerlee/Projects/devrev/data/web/artifacts/aura-web/vite.config.ts"
+11:07:30 pm [vite] server restart failed
+11:07:33 pm [vite] (client) page reload /Users/burnerlee/Projects/devrev/data/web/lib/api-client-react/src/custom-fetch.ts
+11:07:33 pm [vite] (client) page reload /Users/burnerlee/Projects/devrev/data/web/lib/api-client-react/src/generated/api.schemas.ts
+11:07:33 pm [vite] (client) page reload /Users/burnerlee/Projects/devrev/data/web/lib/api-client-react/src/generated/api.ts
+11:07:33 pm [vite] (client) page reload /Users/burnerlee/Projects/devrev/data/web/lib/api-client-react/src/index.ts
+11:07:33 pm [vite] changed tsconfig file detected: /Users/burnerlee/Projects/devrev/data/web/lib/api-client-react/tsconfig.json - Clearing cache and forcing full-reload to ensure TypeScript is compiled with updated config values.
+11:07:33 pm [vite] changed tsconfig file detected: /Users/burnerlee/Projects/devrev/data/web/lib/api-client-react/tsconfig.json - Clearing cache and forcing full-reload to ensure TypeScript is compiled with updated config values.
+11:07:33 pm [vite] (client) page reload .replit-artifact/artifact.toml
+11:07:33 pm [vite] (client) page reload components.json
+11:07:33 pm [vite] (client) page reload index.html
+11:07:33 pm [vite] (client) page reload package.json
+11:07:33 pm [vite] (client) page reload public/favicon.svg
+11:07:33 pm [vite] (client) page reload public/favicon.svg
+11:07:33 pm [vite] (client) page reload public/robots.txt
+11:07:33 pm [vite] (client) page reload public/robots.txt
+11:07:33 pm [vite] (client) page reload src/App.tsx
+11:07:33 pm [vite] (client) page reload src/AuraFeed.tsx
+11:07:33 pm [vite] (client) page reload src/components/error-boundary.tsx
+11:07:33 pm [vite] (client) page reload src/components/ui/accordion.tsx
+11:07:33 pm [vite] (client) page reload src/components/ui/alert-dialog.tsx
+11:07:33 pm [vite] (client) page reload src/components/ui/aspect-ratio.tsx
+11:07:33 pm [vite] (client) page reload src/components/ui/avatar.tsx
+11:07:33 pm [vite] (client) page reload src/components/ui/breadcrumb.tsx
+11:07:33 pm [vite] (client) page reload src/components/ui/badge.tsx
+11:07:33 pm [vite] (client) page reload src/components/ui/button-group.tsx
+11:07:33 pm [vite] (client) page reload src/components/ui/button.tsx
+11:07:33 pm [vite] (client) page reload src/components/ui/calendar.tsx
+11:07:33 pm [vite] (client) page reload src/components/ui/card.tsx
+11:07:33 pm [vite] (client) page reload src/components/ui/carousel.tsx
+11:07:33 pm [vite] (client) page reload src/components/ui/chart.tsx
+11:07:33 pm [vite] (client) page reload src/components/ui/checkbox.tsx
+11:07:33 pm [vite] (client) page reload src/components/ui/alert.tsx
+11:07:33 pm [vite] (client) page reload src/components/ui/collapsible.tsx
+11:07:33 pm [vite] (client) page reload src/components/ui/command.tsx
+11:07:33 pm [vite] (client) page reload src/components/ui/context-menu.tsx
+11:07:33 pm [vite] (client) page reload src/components/ui/dialog.tsx
+11:07:33 pm [vite] (client) page reload src/components/ui/dropdown-menu.tsx
+11:07:33 pm [vite] (client) page reload src/components/ui/empty.tsx
+11:07:33 pm [vite] (client) page reload src/components/ui/drawer.tsx
+11:07:33 pm [vite] (client) page reload src/components/ui/field.tsx
+11:07:33 pm [vite] (client) page reload src/components/ui/form.tsx
+11:07:33 pm [vite] (client) page reload src/components/ui/input-otp.tsx
+11:07:33 pm [vite] (client) page reload src/components/ui/input-group.tsx
+11:07:33 pm [vite] (client) page reload src/components/ui/input.tsx
+11:07:33 pm [vite] (client) page reload src/components/ui/hover-card.tsx
+11:07:33 pm [vite] (client) page reload src/components/ui/item.tsx
+11:07:33 pm [vite] (client) page reload src/components/ui/kbd.tsx
+11:07:33 pm [vite] (client) page reload src/components/ui/label.tsx
+11:07:33 pm [vite] (client) page reload src/components/ui/menubar.tsx
+11:07:33 pm [vite] (client) page reload src/components/ui/navigation-menu.tsx
+11:07:33 pm [vite] (client) page reload src/components/ui/pagination.tsx
+11:07:33 pm [vite] (client) page reload src/components/ui/popover.tsx
+11:07:33 pm [vite] (client) page reload src/components/ui/radio-group.tsx
+11:07:33 pm [vite] (client) page reload src/components/ui/resizable.tsx
+11:07:33 pm [vite] (client) page reload src/components/ui/progress.tsx
+11:07:33 pm [vite] (client) page reload src/components/ui/scroll-area.tsx
+11:07:33 pm [vite] (client) page reload src/components/ui/select.tsx
+11:07:33 pm [vite] (client) page reload src/components/ui/separator.tsx
+11:07:33 pm [vite] (client) page reload src/components/ui/sheet.tsx
+11:07:33 pm [vite] (client) page reload src/components/ui/sidebar.tsx
+11:07:33 pm [vite] (client) page reload src/components/ui/skeleton.tsx
+11:07:33 pm [vite] (client) page reload src/components/ui/slider.tsx
+11:07:33 pm [vite] (client) page reload src/components/ui/sonner.tsx
+11:07:33 pm [vite] (client) page reload src/components/ui/spinner.tsx
+11:07:33 pm [vite] (client) page reload src/components/ui/switch.tsx
+11:07:33 pm [vite] (client) page reload src/components/ui/tabs.tsx
+11:07:33 pm [vite] (client) page reload src/components/ui/table.tsx
+11:07:33 pm [vite] (client) page reload src/components/ui/textarea.tsx
+11:07:33 pm [vite] (client) page reload src/components/ui/toast.tsx
+11:07:33 pm [vite] (client) page reload src/components/ui/toaster.tsx
+11:07:33 pm [vite] (client) page reload src/components/ui/toggle-group.tsx
+11:07:33 pm [vite] (client) page reload src/components/ui/toggle.tsx
+11:07:33 pm [vite] (client) page reload src/components/ui/tooltip.tsx
+11:07:33 pm [vite] (client) page reload src/glass.css
+11:07:33 pm [vite] (client) page reload src/hooks/use-toast.ts
+11:07:33 pm [vite] (client) hmr update /src/index.css
+11:07:33 pm [vite] (client) page reload src/main.tsx
+11:07:33 pm [vite] (client) page reload src/lib/utils.ts
+11:07:33 pm [vite] changed tsconfig file detected: /Users/burnerlee/Projects/devrev/data/web/artifacts/aura-web/tsconfig.json - Clearing cache and forcing full-reload to ensure TypeScript is compiled with updated config values.
+11:07:33 pm [vite] (client) page reload tsconfig.json
+11:07:33 pm [vite] (client) page reload src/pages/not-found.tsx
+11:07:33 pm [vite] vite.config.ts changed, restarting server...
+11:07:33 pm [vite] (client) page reload src/hooks/use-mobile.tsx
+11:07:33 pm [vite] vite.config.ts changed, restarting server...
+11:07:33 pm [vite] (client) page reload /Users/burnerlee/Projects/devrev/data/web/lib/aura-shared/src/demo.ts
+11:07:33 pm [vite] (client) page reload /Users/burnerlee/Projects/devrev/data/web/lib/aura-shared/src/embeds.ts
+11:07:33 pm [vite] (client) page reload /Users/burnerlee/Projects/devrev/data/web/lib/aura-shared/src/index.ts
+11:07:33 pm [vite] (client) page reload /Users/burnerlee/Projects/devrev/data/web/lib/aura-shared/src/interest.ts
+11:07:33 pm [vite] (client) page reload /Users/burnerlee/Projects/devrev/data/web/lib/aura-shared/src/types.ts
+11:07:33 pm [vite] changed tsconfig file detected: /Users/burnerlee/Projects/devrev/data/web/lib/aura-shared/tsconfig.json - Clearing cache and forcing full-reload to ensure TypeScript is compiled with updated config values.
+11:07:33 pm [vite] changed tsconfig file detected: /Users/burnerlee/Projects/devrev/data/web/lib/aura-shared/tsconfig.json - Clearing cache and forcing full-reload to ensure TypeScript is compiled with updated config values.
+11:07:33 pm [vite] server restarted.
+11:07:33 pm [vite] changed tsconfig file detected: /Users/burnerlee/Projects/devrev/data/web/artifacts/aura-web/tsconfig.json - Clearing cache and forcing full-reload to ensure TypeScript is compiled with updated config values.
+11:07:33 pm [vite] vite.config.ts changed, restarting server...
+11:07:33 pm [vite] server restarted.

@@ -1,0 +1,73 @@
+- generic [ref=e3]:
+  - banner [ref=e4]:
+    - link "Aura home" [ref=e5] [cursor=pointer]:
+      - /url: "#"
+      - generic [ref=e9]: aura.
+    - button "Open Interest DNA profile" [ref=e10] [cursor=pointer]:
+      - generic [ref=e15]:
+        - generic [ref=e16]: YOUR PROFILE
+        - strong [ref=e17]: Interest DNA · 10 themes
+      - generic [ref=e18]: VIEW
+    - generic [ref=e21]:
+      - button "Search the feed" [ref=e22] [cursor=pointer]
+      - button "Open pairwise preference" [ref=e26] [cursor=pointer]
+      - button "Create" [ref=e31] [cursor=pointer]
+      - button "Copy user id f46475e1-922d-4d74-b9ee-5cc585bf98ef" [ref=e34] [cursor=pointer]: FF
+  - generic [ref=e35]:
+    - complementary [ref=e36]:
+      - generic [ref=e37]: YOUR SPACE
+      - navigation "Main navigation" [ref=e38]:
+        - button "For you" [ref=e39] [cursor=pointer]
+        - button "Discover" [ref=e45] [cursor=pointer]
+        - button "Collection" [ref=e50] [cursor=pointer]
+      - generic [ref=e55]:
+        - generic [ref=e56]: YOUR INTERESTS
+        - button "Chat with Aura" [ref=e57] [cursor=pointer]: +
+      - button "Make something A thought, a story, a link." [ref=e58] [cursor=pointer]:
+        - strong [ref=e61]: Make something
+        - generic [ref=e62]: A thought, a story, a link.
+      - generic [ref=e63]: A quieter corner of the internet.
+    - main [ref=e65]:
+      - generic [ref=e66]:
+        - generic [ref=e67]:
+          - generic [ref=e68]: PERSONALIZED FOR YOU
+          - heading "For you." [level=1] [ref=e70]
+          - paragraph [ref=e71]: A little less noise. A lot more you.
+        - generic [ref=e72]:
+          - button "Chat with Aura" [ref=e73] [cursor=pointer]
+          - generic [ref=e81]: 00 posts
+      - button "All signals" [ref=e83] [cursor=pointer]
+      - generic [ref=e84]:
+        - heading "No posts in this signal." [level=2] [ref=e88]
+        - paragraph [ref=e89]: Chat with Aura to reshape your signal.
+        - button "Chat with Aura" [ref=e90] [cursor=pointer]
+  - dialog [ref=e91]:
+    - generic [ref=e92]:
+      - generic [ref=e97]:
+        - text: MEET AURA
+        - heading "Let’s find your signal." [level=2] [ref=e98]
+      - button "Close" [ref=e99] [cursor=pointer]
+    - generic [ref=e105]:
+      - generic [ref=e106]: Aura
+      - paragraph [ref=e107]: Hey — I'm Aura. I'll learn what you like through a quick chat, then shape your feed around it. What kinds of posts pull you in first?
+    - generic [ref=e108]:
+      - generic [ref=e109]:
+        - generic [ref=e110]: Themes
+        - button "+ Artificial Intelligence" [ref=e111] [cursor=pointer]
+        - button "+ Public Health" [ref=e112] [cursor=pointer]
+        - button "+ Machine Learning" [ref=e113] [cursor=pointer]
+      - group "Quick replies" [ref=e114]:
+        - button "Artificial Intelligence" [ref=e115] [cursor=pointer]
+        - button "Public Health" [ref=e116] [cursor=pointer]
+        - button "Machine Learning" [ref=e117] [cursor=pointer]
+        - button "Free Speech" [ref=e118] [cursor=pointer]
+        - button "A mix — surprise me" [ref=e119] [cursor=pointer]
+        - button "Not sure yet — help me explore" [ref=e120] [cursor=pointer]
+      - generic [ref=e121]:
+        - generic [ref=e122]: Message Aura
+        - textbox "Message Aura" [ref=e123]:
+          - /placeholder: Type a reply, or tap an option…
+        - button "Send" [disabled] [ref=e124]
+      - generic [ref=e125]:
+        - button "Maybe later" [ref=e126] [cursor=pointer]
+        - button "Apply to my feed" [disabled] [ref=e127]

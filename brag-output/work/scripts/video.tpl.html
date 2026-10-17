@@ -1,0 +1,173 @@
+<!doctype html><html><head><meta charset="utf-8">
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@500;600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>/*APPCSS*/</style>
+<style>
+*,*::before,*::after{animation:none!important;transition:none!important}
+html,body{margin:0;width:1920px;height:1080px;overflow:hidden;background:#020203}
+#stage{position:relative;width:1920px;height:1080px;overflow:hidden;background:radial-gradient(ellipse at 50% -20%,rgba(34,211,238,.08),transparent 55%),#020203}
+#cam{position:absolute;inset:0;transform-origin:0 0}
+.layer{position:absolute;inset:0;width:1920px;height:1080px;overflow:hidden;opacity:0;background:#020203}
+#L-burst-hit{z-index:2}
+.layer #root{width:1920px;height:1080px;overflow:hidden}
+.aura-fly-layer{display:none!important}
+#cursor{position:absolute;left:0;top:0;width:30px;height:30px;opacity:0;z-index:50;filter:drop-shadow(0 4px 10px rgba(0,0,0,.6))}
+.ripple{position:absolute;width:20px;height:20px;margin:-10px 0 0 -10px;border-radius:50%;border:2px solid #22d3ee;opacity:0;z-index:49}
+.flydot{position:absolute;width:12px;height:12px;margin:-6px 0 0 -6px;border-radius:50%;background:#a855f7;box-shadow:0 0 16px 4px rgba(168,85,247,.65);opacity:0;z-index:48}
+.flychip{position:absolute;z-index:48;opacity:0;padding:5px 11px;border-radius:999px;border:1px solid rgba(168,85,247,.6);background:rgba(10,10,16,.9);color:#f4f3f7;font:600 14px 'DM Mono',monospace;white-space:nowrap;transform:translate(-50%,-50%)}
+.hook{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;font-family:Manrope,sans-serif;color:#f4f3f7;z-index:60;pointer-events:none}
+.hook .line{font-weight:800;font-size:150px;letter-spacing:-.045em;line-height:1.02;opacity:0}
+.hook .line b{color:#22d3ee;font-weight:800}
+.hook .muted{color:#77767f}
+.cap{position:absolute;z-index:60;font-family:Manrope,sans-serif;color:#f4f3f7;font-weight:800;letter-spacing:-.035em;opacity:0}
+.cap small{display:block;font:500 17px 'DM Mono',monospace;letter-spacing:.14em;color:#22d3ee;margin-bottom:18px;text-transform:uppercase}
+#capChat{left:96px;top:390px;width:470px;font-size:64px;line-height:1.04}
+.lower{left:0;right:0;bottom:0;height:300px;background:linear-gradient(0deg,rgba(2,2,3,.97) 30%,rgba(2,2,3,0));display:flex;align-items:flex-end;padding:0 0 74px 110px;box-sizing:border-box;font-size:68px;line-height:1}
+#outro{position:absolute;inset:0;z-index:70;display:flex;flex-direction:column;align-items:center;justify-content:center;opacity:0;background:radial-gradient(ellipse at 50% 42%,rgba(34,211,238,.10),transparent 50%),#020203}
+#outro .logo{display:flex;align-items:center;gap:34px;opacity:0}
+#outro .brand-mark{transform:scale(3.4);margin:0 34px}
+#outro .brand-name{font-size:150px!important;letter-spacing:-.05em}
+#outro .tag{font:700 52px Manrope,sans-serif;letter-spacing:-.03em;color:#f4f3f7;margin-top:46px;opacity:0}
+#outro .tag span{color:#a7a5ad}
+#outro .mono{font:500 19px 'DM Mono',monospace;letter-spacing:.16em;color:#777681;margin-top:34px;text-transform:uppercase;opacity:0}
+#outro .mono i{font-style:normal;color:#22d3ee}
+#dip{position:absolute;inset:0;background:#020203;z-index:65;opacity:0;pointer-events:none}
+</style></head><body>
+<div id="stage">
+  <div id="cam"><!--LAYERS-->
+    <svg id="cursor" viewBox="0 0 24 24"><path d="M4 2.5l15.5 9.2-6.9 1.4 3.9 7.4-2.9 1.5-3.9-7.4-5.2 4.7z" fill="#fff" stroke="#111" stroke-width="1.3" stroke-linejoin="round"/></svg>
+    <div class="ripple" id="rip"></div>
+    <div class="flychip" id="fchip">+7 AI / ML</div>
+  </div>
+  <div class="hook" id="hook"><div class="line muted" id="h1">Feeds guess.</div><div class="line" id="h2">Aura asks<b>.</b></div></div>
+  <div class="cap" id="capChat"><small>Meet Aura</small>Tell it what you like. In a chat.</div>
+  <div class="cap lower" id="capFeed"><div><small>Personalized for you</small>Your feed re-ranks around you.</div></div>
+  <div class="cap lower" id="capDna"><div><small>Interest DNA</small>Every tap tunes your profile.</div></div>
+  <div id="dip"></div>
+  <div id="outro">
+    <div class="logo" id="ologo"><span class="brand-mark"><span></span><i></i></span><span class="brand-name">aura<span>.</span></span></div>
+    <div class="tag" id="otag">A little less noise. <span>A lot more you.</span></div>
+    <div class="mono" id="omono">Chat-built profiles <i>·</i> set-to-set ranking <i>·</i> zero reinforcement learning</div>
+  </div>
+</div>
+<script>
+const TL=/*TIMELINE*/;
+const $=id=>document.getElementById(id);
+const cl=(x,a=0,b=1)=>Math.min(b,Math.max(a,x));
+const ramp=(t,a,b)=>cl((t-a)/(b-a));
+const eo=x=>1-Math.pow(1-x,3), eio=x=>x<.5?4*x*x*x:1-Math.pow(-2*x+2,3)/2;
+const eback=x=>{const c=1.5;return 1+(c+1)*Math.pow(x-1,3)+c*Math.pow(x-1,2)};
+const L=k=>$('L-'+k);
+const R={};
+function rectOf(layer,sel,txt){
+  layer.style.opacity=1;
+  let els=[...layer.querySelectorAll(sel)];
+  if(txt) els=els.filter(e=>e.textContent.includes(txt));
+  const r=els[0].getBoundingClientRect();
+  layer.style.opacity=0;
+  return {x:r.left+r.width/2,y:r.top+r.height/2,w:r.width,h:r.height,l:r.left,t:r.top};
+}
+function measure(){
+  R.o1=rectOf(L('chat0'),'.aura-option-chip','AI / ML');
+  R.o2=rectOf(L('chat1'),'.aura-option-chip','Deep');
+  R.o3=rectOf(L('chat2'),'.aura-option-chip','Less hype');
+  R.apply=rectOf(L('chat3'),'.aura-chat-actions .button-primary');
+  R.modal=rectOf(L('chat0'),'.aura-chat-modal');
+  R.res=rectOf(L('feed2'),'.resonate-button');
+  R.card=rectOf(L('feed2'),'.post-card');
+  R.match=rectOf(L('feed2'),'.match-chip');
+  R.nav=rectOf(L('feed2'),'.glass-profile-trigger');
+  R.pop=rectOf(L('burst-hit'),'.glass-profile-popover');
+  R.matchEls=[...L('feed2').querySelectorAll('.match-chip')].slice(0,2).map(e=>{const n=[...e.childNodes].reverse().find(c=>c.nodeType===3);return n});
+}
+// camera: focus point (fx,fy) placed at screen (sx,sy) with scale s
+function cam(s,fx,fy,sx=960,sy=540){ $('cam').style.transform=`translate(${sx-fx*s}px,${sy-fy*s}px) scale(${s})`; }
+function lerp(a,b,x){return a+(b-a)*x}
+function camLerp(A,B,x){cam(lerp(A[0],B[0],x),lerp(A[1],B[1],x),lerp(A[2],B[2],x),lerp(A[3],B[3],x),lerp(A[4],B[4],x))}
+const path=[]; // cursor keyframes [t,x,y]
+function cursorAt(t,keys){
+  if(t<=keys[0][0]) return keys[0];
+  for(let i=0;i<keys.length-1;i++){const a=keys[i],b=keys[i+1]; if(t<=b[0]){const x=eio(ramp(t,a[0],b[0]));return [t,lerp(a[1],b[1],x),lerp(a[2],b[2],x)];}}
+  return keys[keys.length-1];
+}
+function showLayer(map){ for(const el of document.querySelectorAll('.layer')) el.style.opacity=map[el.id.slice(2)]||0; }
+function ripple(t,clicks,pos){
+  const r=$('rip'); r.style.opacity=0;
+  for(const c of clicks){const p=ramp(t,c,c+.45); if(t>=c&&p<1){const k=pos(c); r.style.left=k[0]+'px'; r.style.top=k[1]+'px'; r.style.opacity=(1-p)*.9; r.style.transform=`scale(${1+eo(p)*2.6})`;}}
+}
+function setTime(t){
+  // hook
+  const h1=eo(ramp(t,.15,.6)), h2=eo(ramp(t,.95,1.4)), hout=ramp(t,2.05,2.35);
+  $('h1').style.opacity=h1*(1-hout); $('h1').style.transform=`translateY(${(1-h1)*30}px)`;
+  $('h2').style.opacity=h2*(1-hout); $('h2').style.transform=`translateY(${(1-h2)*30}px) scale(${1+.04*h2})`;
+  $('hook').style.transform=`scale(${1+hout*.08})`;
+  // layers
+  let m={};
+  if(t<7.45){ m = t<3.62?{chat0:1}: t<4.72?{chat1:1}: t<5.82?{chat2:1}:{chat3:1}; }
+  else if(t<13.05) m={feed2:1};
+  else { const x=eo(ramp(t,13.75,14.05)); m={'resonate-mid':1,'burst-hit':x}; }
+  const chatIn=eo(ramp(t,2.4,2.9));
+  for(const k in m) m[k]*= (k.startsWith('chat')?chatIn:1);
+  showLayer(m);
+  // camera
+  const mc=[R.modal.x,R.modal.y];
+  if(t<7.45){ const z=eo(ramp(t,2.4,7.45)); cam(lerp(1.22,1.32,z),mc[0],mc[1],lerp(1180,1200,z),540); }
+  else if(t<12.5){
+    const z=eio(ramp(t,7.6,11.2));
+    camLerp([1.0,960,540,960,540],[1.55,R.card.x,R.card.y,880,450],z);
+  } else if(t<13.9){
+    const z=eio(ramp(t,12.4,13.3));
+    camLerp([1.55,R.card.x,R.card.y,880,450],[1.12,(R.card.x+R.nav.x)/2,(R.card.y+R.nav.y)/2+40,960,430],z);
+  } else {
+    const z=eio(ramp(t,13.9,15.0));
+    camLerp([1.12,(R.card.x+R.nav.x)/2,(R.card.y+R.nav.y)/2+40,960,430],[1.42,R.pop.x,R.pop.y+20,1060,420],z);
+  }
+  // dips
+  const dipFeed = t<7.45? ramp(t,7.15,7.45) : 1-ramp(t,7.45,7.85);
+  $('dip').style.opacity = t<8? dipFeed:0;
+  // chat caption
+  const cc=eo(ramp(t,2.9,3.4))*(1-ramp(t,7.05,7.35));
+  $('capChat').style.opacity=cc; $('capChat').style.transform=`translateY(${(1-eo(ramp(t,2.9,3.4)))*24}px)`;
+  const cf=eo(ramp(t,8.1,8.6))*(1-ramp(t,12.2,12.5));
+  $('capFeed').style.opacity=cf; $('capFeed').firstChild.style.transform=`translateY(${(1-eo(ramp(t,8.1,8.6)))*24}px)`;
+  const cd=eo(ramp(t,13.3,13.8))*(1-ramp(t,15.5,15.8));
+  $('capDna').style.opacity=cd; $('capDna').firstChild.style.transform=`translateY(${(1-eo(ramp(t,13.3,13.8)))*24}px)`;
+  // match count-up 34 -> 71
+  const mv=Math.round(lerp(34,71,eio(ramp(t,TL.count[0],TL.count[1]))));
+  for(const n of R.matchEls) if(n) n.textContent=mv+'% match';
+  const glow=ramp(t,TL.count[0],TL.count[1]+.2)*(1-ramp(t,11.6,12.3));
+  L('feed2').querySelectorAll('.match-chip').forEach((e,i)=>{ if(i<2){ e.style.boxShadow=`0 0 ${24*glow}px rgba(34,211,238,${.55*glow})`; e.style.borderColor=`rgba(34,211,238,${.25+.6*glow})`; e.style.transform=`scale(${1+.1*glow})`; }});
+  // cursor
+  const cur=$('cursor');
+  let keys=null, clicks=[];
+  if(t>=2.9 && t<7.45){
+    keys=[[2.9,R.modal.x+120,R.modal.y+330],[3.4,R.o1.x,R.o1.y],[4.0,R.o1.x+40,R.o1.y+40],[4.5,R.o2.x,R.o2.y],[5.1,R.o2.x+30,R.o2.y+40],[5.6,R.o3.x,R.o3.y],[6.3,R.o3.x+60,R.o3.y+60],[6.85,R.apply.x,R.apply.y]];
+    clicks=TL.clicks.slice(0,4);
+    cur.style.opacity=ramp(t,2.9,3.1)*(1-ramp(t,7.1,7.3));
+  } else if(t>=11.6 && t<14.2){
+    keys=[[11.6,R.res.x+260,R.res.y+190],[12.85,R.res.x,R.res.y]];
+    clicks=[TL.clicks[4]];
+    cur.style.opacity=ramp(t,11.6,11.9)*(1-ramp(t,13.6,13.9));
+  } else cur.style.opacity=0;
+  if(keys){ const p=cursorAt(t,keys); let s=1; for(const c of clicks){ if(t>=c&&t<c+.18) s=.82; } cur.style.transform=`translate(${p[1]-4}px,${p[2]-3}px) scale(${s})`; ripple(t,clicks,c=>{const q=cursorAt(c,keys);return [q[1],q[2]]}); } else $('rip').style.opacity=0;
+  // fly packet
+  document.querySelectorAll('.flydot').forEach((d,i)=>{
+    const a=TL.fly[0]+i*.06, p=ramp(t,a,TL.fly[1]+i*.03);
+    if(t<a||p>=1){d.style.opacity=0;return;}
+    const e=eio(p), x0=R.res.x,y0=R.res.y,x1=R.nav.x,y1=R.nav.y, cx=(x0+x1)/2+(i-2)*30, cy=Math.min(y0,y1)-60;
+    const x=(1-e)*(1-e)*x0+2*(1-e)*e*cx+e*e*x1, y=(1-e)*(1-e)*y0+2*(1-e)*e*cy+e*e*y1;
+    d.style.left=x+'px'; d.style.top=y+'px'; d.style.opacity=Math.sin(p*Math.PI)*.95+.05; d.style.transform=`scale(${1-.4*p})`;
+  });
+  const fc=$('fchip'), fp=ramp(t,TL.fly[0],TL.fly[1]);
+  if(t>=TL.fly[0]&&fp<1){const e=eio(fp); fc.style.left=lerp(R.res.x,R.nav.x,e)+'px'; fc.style.top=(lerp(R.res.y,R.nav.y,e)-40*Math.sin(e*Math.PI))+'px'; fc.style.opacity=Math.min(1,fp*6)*(1-ramp(fp,.85,1));} else fc.style.opacity=0;
+  // outro
+  const o=ramp(t,15.6,16.15);
+  $('outro').style.opacity=o;
+  const lg=eback(ramp(t,16.3,17.0));
+  $('ologo').style.opacity=cl(ramp(t,16.3,16.7)); $('ologo').style.transform=`scale(${.86+.14*lg})`;
+  const tg=eo(ramp(t,17.0,17.5)); $('otag').style.opacity=tg; $('otag').style.transform=`translateY(${(1-tg)*20}px)`;
+  const mo=eo(ramp(t,17.7,18.2)); $('omono').style.opacity=mo; $('omono').style.transform=`translateY(${(1-mo)*14}px)`;
+}
+for(let i=0;i<5;i++){const d=document.createElement('div');d.className='flydot';$('cam').appendChild(d);}
+window.ready=(async()=>{await document.fonts.ready; await new Promise(r=>setTimeout(r,300)); measure(); setTime(0); return true;})();
+window.setTime=setTime;
+</script></body></html>

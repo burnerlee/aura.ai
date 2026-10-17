@@ -1,0 +1,1 @@
+Feeds guess. Aura asks. Tell it what you like in a 20-second chat, and it builds an Interest DNA that re-ranks every post around you. Each Resonate tap keeps tuning it, with set-to-set ranking under the hood and zero reinforcement learning.

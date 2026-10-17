@@ -1,0 +1,261 @@
+<!doctype html><html><head><meta charset="utf-8">
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@500;600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>/*APPCSS*/</style>
+<style>
+*,*::before,*::after{animation:none!important;transition:none!important}
+html,body{margin:0;width:1920px;height:1080px;overflow:hidden;background:#020203}
+#stage{position:relative;width:1920px;height:1080px;overflow:hidden;background:radial-gradient(ellipse at 50% -20%,rgba(34,211,238,.08),transparent 55%),#020203}
+#cam{position:absolute;inset:0;transform-origin:0 0}
+.layer{position:absolute;inset:0;width:1920px;height:1080px;overflow:hidden;opacity:0;background:#020203}
+#L-burst-hit{z-index:2}
+.layer #root{width:1920px;height:1080px;overflow:hidden}
+.aura-fly-layer{display:none!important}
+#cursor{position:absolute;left:0;top:0;width:30px;height:30px;opacity:0;z-index:50;filter:drop-shadow(0 4px 10px rgba(0,0,0,.6))}
+.ripple{position:absolute;width:20px;height:20px;margin:-10px 0 0 -10px;border-radius:50%;border:2px solid #22d3ee;opacity:0;z-index:49}
+.flydot{position:absolute;width:12px;height:12px;margin:-6px 0 0 -6px;border-radius:50%;background:#a855f7;box-shadow:0 0 16px 4px rgba(168,85,247,.65);opacity:0;z-index:48}
+.flychip{position:absolute;z-index:48;opacity:0;padding:5px 11px;border-radius:999px;border:1px solid rgba(168,85,247,.6);background:rgba(10,10,16,.9);color:#f4f3f7;font:600 14px 'DM Mono',monospace;white-space:nowrap;transform:translate(-50%,-50%)}
+
+/* pain: generic doomscroll feed (illustrative, not any real platform) */
+#pain{position:absolute;inset:0;z-index:80;background:#0d0d0f;overflow:hidden}
+#pcols{position:absolute;inset:0;filter:saturate(.15)}
+.pcol{position:absolute;top:0;width:500px;display:flex;flex-direction:column;gap:26px;will-change:transform}
+.pc{background:#1a1b1e;border:1px solid #2a2b30;border-radius:18px;padding:22px 24px;font-family:'DM Sans',sans-serif;color:#cfcfd4;box-sizing:border-box}
+.pc .hd{display:flex;align-items:center;gap:12px;margin-bottom:14px}
+.pc .av{width:40px;height:40px;border-radius:50%;background:#3a3b41}
+.pc .nm{display:flex;flex-direction:column;gap:7px}
+.pc .nm i{display:block;height:10px;border-radius:5px;background:#3a3b41}
+.pc .tag{margin-left:auto;font:500 13px 'DM Mono',monospace;letter-spacing:.08em;text-transform:uppercase;color:#8d8d95;border:1px solid #3a3b41;border-radius:999px;padding:4px 10px}
+.pc .tx{font-size:23px;font-weight:600;line-height:1.3;color:#e2e2e6}
+.pc .im{height:230px;border-radius:12px;margin-top:14px;position:relative;overflow:hidden}
+.pc .im.bl::before{content:'';position:absolute;inset:-20px;background:inherit;filter:blur(18px)}
+.pc .wr{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;color:#e9e9ec;font:600 20px 'DM Sans',sans-serif;background:rgba(10,10,12,.55)}
+.pc .wr b{width:46px;height:46px;border-radius:50%;border:2px solid #e9e9ec;display:flex;align-items:center;justify-content:center;font-size:26px}
+.pc .wr small{font:500 14px 'DM Mono',monospace;color:#a2a2a9;letter-spacing:.06em}
+.pc .ft{display:flex;gap:26px;margin-top:16px;font:500 15px 'DM Mono',monospace;color:#7d7d85}
+#pshade{position:absolute;inset:0;background:radial-gradient(ellipse 62% 48% at 50% 50%,rgba(6,6,8,.92),rgba(6,6,8,.55) 70%,rgba(6,6,8,.35))}
+.ptext{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;font-family:Manrope,sans-serif;color:#f4f3f7;text-align:center;opacity:0}
+.ptext .big{font-weight:800;font-size:128px;letter-spacing:-.045em;line-height:1.02}
+.ptext .big b{color:#22d3ee;font-weight:800}
+.ptext .mono{font:500 24px 'DM Mono',monospace;letter-spacing:.2em;text-transform:uppercase;color:#9a9aa2;margin-top:34px}
+.ptext .mono i{font-style:normal;color:#ff6b6b}
+
+.cap{position:absolute;z-index:60;font-family:Manrope,sans-serif;color:#f4f3f7;font-weight:800;letter-spacing:-.035em;opacity:0}
+.cap small{display:block;font:500 17px 'DM Mono',monospace;letter-spacing:.14em;color:#22d3ee;margin-bottom:18px;text-transform:uppercase}
+.cap em{font-style:normal;color:#a7a5ad}
+#capChat{left:96px;top:360px;width:600px;font-size:64px;line-height:1.06}
+#capChat em{display:block;font-size:40px;line-height:1.15;margin-top:22px;letter-spacing:-.025em}
+.lower{left:0;right:0;bottom:0;height:440px;background:linear-gradient(0deg,rgba(2,2,3,.98) 48%,rgba(2,2,3,.75) 72%,rgba(2,2,3,0));display:flex;align-items:flex-end;padding:0 0 70px 110px;box-sizing:border-box;font-size:66px;line-height:1.05}
+.brandbox{position:absolute;inset:0;z-index:70;display:flex;flex-direction:column;align-items:center;justify-content:center;opacity:0;background:radial-gradient(ellipse at 50% 42%,rgba(34,211,238,.10),transparent 50%),#020203}
+.brandbox .logo{display:flex;align-items:center;gap:34px;opacity:0}
+.brandbox .brand-mark{transform:scale(3.4);margin:0 34px}
+.brandbox .brand-name{font-size:150px!important;letter-spacing:-.05em}
+.brandbox .tag{font:700 52px Manrope,sans-serif;letter-spacing:-.03em;color:#f4f3f7;margin-top:46px;opacity:0}
+.brandbox .tag span{color:#a7a5ad}
+.brandbox .kick{font:500 22px 'DM Mono',monospace;letter-spacing:.32em;color:#22d3ee;margin-bottom:40px;text-transform:uppercase;opacity:0}
+.brandbox .mono{font:500 19px 'DM Mono',monospace;letter-spacing:.16em;color:#777681;margin-top:34px;text-transform:uppercase;opacity:0}
+.brandbox .mono i{font-style:normal;color:#22d3ee}
+#dip{position:absolute;inset:0;background:#020203;z-index:65;opacity:0;pointer-events:none}
+</style></head><body>
+<div id="stage">
+  <div id="cam"><!--LAYERS-->
+    <svg id="cursor" viewBox="0 0 24 24"><path d="M4 2.5l15.5 9.2-6.9 1.4 3.9 7.4-2.9 1.5-3.9-7.4-5.2 4.7z" fill="#fff" stroke="#111" stroke-width="1.3" stroke-linejoin="round"/></svg>
+    <div class="ripple" id="rip"></div>
+    <div class="flychip" id="fchip">+7 AI / ML</div>
+  </div>
+  <div class="cap lower" id="capFeed"><div><small>Personalized for you</small>A feed shaped around what you love.</div></div>
+  <div class="cap" id="capChat"><small>Build your Interest DNA</small>Talk to Aura like a friend.<em>It learns what you’re into — and what you’re not.</em></div>
+  <div class="cap lower" id="capDna"><div><small>Feedback</small>Resonate or banish.<br><em>Aura learns from every tap.</em></div></div>
+  <div id="dip"></div>
+  <div class="brandbox" id="meet">
+    <div class="kick" id="mkick">Meet</div>
+    <div class="logo" id="mlogo"><span class="brand-mark"><span></span><i></i></span><span class="brand-name">aura<span>.</span></span></div>
+    <div class="tag" id="mtag">The feed that <span>gets you.</span></div>
+  </div>
+  <div class="brandbox" id="outro">
+    <div class="logo" id="ologo"><span class="brand-mark"><span></span><i></i></span><span class="brand-name">aura<span>.</span></span></div>
+    <div class="tag" id="otag">A little less noise. <span>A lot more you.</span></div>
+    <div class="mono" id="omono">Chat <i>·</i> Personalize <i>·</i> Resonate</div>
+  </div>
+  <div id="pain">
+    <div id="pcols"></div>
+    <div id="pshade"></div>
+    <div class="ptext" id="p1"><div class="big">Tired of doomscrolling?</div><div class="mono" id="p1m">Irrelevant <i>·</i> Inappropriate <i>·</i> Endless</div></div>
+    <div class="ptext" id="p2"><div class="big">Your feed should<br><b>understand you.</b></div></div>
+  </div>
+</div>
+<script>
+const TL=/*TIMELINE*/;
+const $=id=>document.getElementById(id);
+const cl=(x,a=0,b=1)=>Math.min(b,Math.max(a,x));
+const ramp=(t,a,b)=>cl((t-a)/(b-a));
+const eo=x=>1-Math.pow(1-x,3), eio=x=>x<.5?4*x*x*x:1-Math.pow(-2*x+2,3)/2;
+const eback=x=>{const c=1.5;return 1+(c+1)*Math.pow(x-1,3)+c*Math.pow(x-1,2)};
+const tri=(t,a,b,c)=>t<b?ramp(t,a,b):1-ramp(t,b,c);
+const L=k=>$('L-'+k);
+const R={};
+
+// ---- doomscroll cards (generic, illustrative)
+const G=['linear-gradient(135deg,#4a4a52,#26262b)','linear-gradient(160deg,#5a4b4b,#2a2526)','linear-gradient(120deg,#3f4650,#22252b)','linear-gradient(200deg,#55504a,#2a2826)'];
+const CARDS=[
+ {tag:'Sponsored',tx:'70% off things you didn’t know you needed!!!',im:0},
+ {tx:'',warn:'Sensitive content',im:1},
+ {tx:'You won’t BELIEVE what happened next 😱',im:2},
+ {tx:'Hot take: anyone who disagrees with me is wrong.',ft:['14.2k replies','Trending']},
+ {tag:'Suggested',tx:'Celebrity drama recap, part 48',im:3},
+ {tx:'Top 10 reasons you’re doing everything wrong',ft:['9.8k shares']},
+ {tx:'',warn:'This video may be disturbing',im:2},
+ {tag:'Trending',tx:'BREAKING: people are furious about something',ft:['52k quotes']},
+ {tag:'Sponsored',tx:'Doctors hate this one weird trick',im:1},
+ {tx:'Wait for it…',im:0},
+ {tx:'Ratio.',ft:['3.1k likes','Suggested for you']},
+];
+function cardHTML(c){
+  let h=`<div class="pc"><div class="hd"><div class="av"></div><div class="nm"><i style="width:${110+Math.random()*80|0}px"></i><i style="width:70px;opacity:.6"></i></div>${c.tag?`<span class="tag">${c.tag}</span>`:''}</div>`;
+  if(c.tx) h+=`<div class="tx">${c.tx}</div>`;
+  if(c.im!==undefined) h+=`<div class="im ${c.warn?'bl':''}" style="background:${G[c.im]}">${c.warn?`<div class="wr"><b>!</b>${c.warn}<small>TAP TO VIEW</small></div>`:''}</div>`;
+  h+=`<div class="ft">${(c.ft||['♡ 2.4k','↻ 811','⋯']).map(x=>`<span>${x}</span>`).join('')}</div></div>`;
+  return h;
+}
+const COLS=[];
+(function(){
+  let seed=3; Math.random=()=>{seed=(seed*16807)%2147483647;return seed/2147483647};
+  const xs=[140,710,1280];
+  xs.forEach((x,ci)=>{
+    const col=document.createElement('div'); col.className='pcol'; col.style.left=x+'px';
+    const order=CARDS.map((_,i)=>CARDS[(i*(ci+2)+ci*3)%CARDS.length]);
+    const one=order.map(cardHTML).join('');
+    col.innerHTML=one+one; $('pcols').appendChild(col); COLS.push({el:col,off:ci*340,mul:[1,.9,1.1][ci]});
+  });
+})();
+// thumb flicks: [start, dur, px]
+const FL=[];
+for(let k=0;k<7;k++) FL.push([k*.52,.48,640+(k%3)*120]);
+FL.push([3.8,.75,520],[4.75,1.0,260]);
+const scrollPos=t=>FL.reduce((s,f)=>s+f[2]*eo(ramp(t,f[0],f[0]+f[1])),0);
+
+function rectOf(layer,sel,txt){
+  layer.style.opacity=1;
+  let els=[...layer.querySelectorAll(sel)];
+  if(txt) els=els.filter(e=>e.textContent.includes(txt));
+  const r=els[0].getBoundingClientRect();
+  layer.style.opacity=0;
+  return {x:r.left+r.width/2,y:r.top+r.height/2,w:r.width,h:r.height,l:r.left,t:r.top};
+}
+const chipText=layer=>[...layer.querySelectorAll('.match-chip')].slice(0,2).map(e=>[...e.childNodes].reverse().find(c=>c.nodeType===3));
+function measure(){
+  R.o1=rectOf(L('chat0'),'.aura-option-chip','AI / ML');
+  R.o2=rectOf(L('chat1'),'.aura-option-chip','Deep');
+  R.o3=rectOf(L('chat2'),'.aura-option-chip','Less hype');
+  R.apply=rectOf(L('chat3'),'.aura-chat-actions .button-primary');
+  R.modal=rectOf(L('chat0'),'.aura-chat-modal');
+  R.res=rectOf(L('feed2'),'.resonate-button');
+  R.card=rectOf(L('feed2'),'.post-card');
+  R.nav=rectOf(L('feed2'),'.glass-profile-trigger');
+  R.pop=rectOf(L('burst-hit'),'.glass-profile-popover');
+  R.matchEls=chipText(L('feed2'));
+  // keep the top AI/ML matches consistent across the later captures
+  for(const k of ['resonate-mid','burst-hit']) for(const n of chipText(L(k))) if(n) n.textContent='71% match';
+  for(const c of COLS) c.h=c.el.scrollHeight/2;
+}
+function cam(s,fx,fy,sx=960,sy=540){ $('cam').style.transform=`translate(${sx-fx*s}px,${sy-fy*s}px) scale(${s})`; }
+function lerp(a,b,x){return a+(b-a)*x}
+function camLerp(A,B,x){cam(...A.map((v,i)=>lerp(v,B[i],x)))}
+function cursorAt(t,keys){
+  if(t<=keys[0][0]) return keys[0];
+  for(let i=0;i<keys.length-1;i++){const a=keys[i],b=keys[i+1]; if(t<=b[0]){const x=eio(ramp(t,a[0],b[0]));return [t,lerp(a[1],b[1],x),lerp(a[2],b[2],x)];}}
+  return keys[keys.length-1];
+}
+function showLayer(map){ for(const el of document.querySelectorAll('.layer')) el.style.opacity=map[el.id.slice(2)]||0; }
+function ripple(t,clicks,pos){
+  const r=$('rip'); r.style.opacity=0;
+  for(const c of clicks){const p=ramp(t,c,c+.45); if(t>=c&&p<1){const k=pos(c); r.style.left=k[0]+'px'; r.style.top=k[1]+'px'; r.style.opacity=(1-p)*.9; r.style.transform=`scale(${1+eo(p)*2.6})`;}}
+}
+function fadeUp(el,inA,inB,outA,outB,dy=24,inner){
+  const a=eo(ramp(t_,inA,inB)); el.style.opacity=a*(1-ramp(t_,outA,outB));
+  (inner||el).style.transform=`translateY(${(1-a)*dy}px)`;
+}
+let t_=0;
+function setTime(t){
+  t_=t;
+  // ---- 1-2 pain → need
+  $('pain').style.opacity=1-ramp(t,6.0,6.25);
+  $('pain').style.display=t<6.3?'block':'none';
+  const sp=scrollPos(t), v=(scrollPos(t+1/60)-sp)*60;
+  for(const c of COLS){ const y=-(((sp*c.mul+c.off)%c.h)); c.el.style.transform=`translateY(${y}px)`; }
+  $('pcols').style.filter=`saturate(.15) blur(${Math.min(5,v/600)}px)`;
+  $('pcols').style.opacity=1-.6*eio(ramp(t,3.9,5.0));
+  $('pshade').style.opacity=.85+.15*ramp(t,3.9,5.0);
+  fadeUp($('p1'),.25,.7,3.45,3.7,30);
+  const m1=eo(ramp(t,1.35,1.8)); $('p1m').style.opacity=m1; $('p1m').style.transform=`translateY(${(1-m1)*14}px)`;
+  fadeUp($('p2'),3.9,4.4,5.85,6.15,30);
+  $('p2').style.transform+=` scale(${1+.03*ramp(t,3.9,6.1)})`;
+
+  // ---- 3 meet aura
+  $('meet').style.opacity=t<TL.meet?0:1-ramp(t,8.5,8.75);
+  const mk=eo(ramp(t,6.35,6.7)); $('mkick').style.opacity=mk; $('mkick').style.transform=`translateY(${(1-mk)*12}px)`;
+  const mlg=eback(ramp(t,6.3,6.95));
+  $('mlogo').style.opacity=cl(ramp(t,6.3,6.6)); $('mlogo').style.transform=`scale(${.86+.14*mlg})`;
+  fadeUp($('mtag'),6.75,7.1,99,99,20);
+
+  // ---- app layers
+  let m={};
+  if(t>=8.75&&t<12.5) m={feed2:1};
+  else if(t>=12.5&&t<17.45) m= t<13.72?{chat0:1}: t<14.82?{chat1:1}: t<15.92?{chat2:1}:{chat3:1};
+  else if(t>=17.45&&t<21.2){ if(t<18.75) m={feed2:1}; else m={'resonate-mid':1,'burst-hit':eo(ramp(t,19.45,19.75))}; }
+  showLayer(m);
+  $('dip').style.opacity = t<8.75?1:Math.max(1-ramp(t,8.75,9.15),tri(t,12.2,12.5,12.85),tri(t,17.15,17.45,17.85));
+
+  // camera
+  const mid=[(R.card.x+R.nav.x)/2,(R.card.y+R.nav.y)/2+40];
+  if(t<12.5){ camLerp([1.0,960,540,960,540],[1.55,R.card.x,R.card.y,880,450],eio(ramp(t,9.0,11.7))); }
+  else if(t<17.45){ const z=eo(ramp(t,12.5,17.45)); cam(lerp(1.22,1.32,z),R.modal.x,R.modal.y,lerp(1180,1200,z),540); }
+  else if(t<19.6){ camLerp([1.04,mid[0],mid[1],960,450],[1.12,mid[0],mid[1],960,430],eo(ramp(t,17.45,19.0))); }
+  else camLerp([1.12,mid[0],mid[1],960,430],[1.42,R.pop.x,R.pop.y+20,1060,420],eio(ramp(t,19.6,20.7)));
+
+  // captions
+  fadeUp($('capFeed'),9.25,9.75,12.0,12.3,24,$('capFeed').firstChild);
+  fadeUp($('capChat'),13.0,13.5,16.95,17.2,24);
+  fadeUp($('capDna'),17.9,18.4,20.6,20.9,24,$('capDna').firstChild);
+
+  // match count-up 6 -> 71
+  const mv=Math.round(lerp(6,71,eio(ramp(t,TL.count[0],TL.count[1]))));
+  for(const n of R.matchEls) if(n) n.textContent=mv+'% match';
+  const glow=ramp(t,TL.count[0],TL.count[1]+.2)*(1-ramp(t,11.7,12.3));
+  L('feed2').querySelectorAll('.match-chip').forEach((e,i)=>{ if(i<2){ e.style.boxShadow=`0 0 ${24*glow}px rgba(34,211,238,${.55*glow})`; e.style.borderColor=`rgba(34,211,238,${.25+.6*glow})`; e.style.transform=`scale(${1+.1*glow})`; }});
+
+  // cursor
+  const cur=$('cursor');
+  let keys=null, clicks=[];
+  if(t>=13.0 && t<17.45){
+    keys=[[13.0,R.modal.x+120,R.modal.y+330],[13.5,R.o1.x,R.o1.y],[14.1,R.o1.x+40,R.o1.y+40],[14.6,R.o2.x,R.o2.y],[15.2,R.o2.x+30,R.o2.y+40],[15.7,R.o3.x,R.o3.y],[16.4,R.o3.x+60,R.o3.y+60],[16.95,R.apply.x,R.apply.y]];
+    clicks=TL.clicks.slice(0,4);
+    cur.style.opacity=ramp(t,13.0,13.2)*(1-ramp(t,17.2,17.4));
+  } else if(t>=17.7 && t<19.7){
+    keys=[[17.7,R.res.x+260,R.res.y+190],[18.55,R.res.x,R.res.y]];
+    clicks=[TL.clicks[4]];
+    cur.style.opacity=ramp(t,17.7,18.0)*(1-ramp(t,19.3,19.6));
+  } else cur.style.opacity=0;
+  if(keys){ const p=cursorAt(t,keys); let s=1; for(const c of clicks){ if(t>=c&&t<c+.18) s=.82; } cur.style.transform=`translate(${p[1]-4}px,${p[2]-3}px) scale(${s})`; ripple(t,clicks,c=>{const q=cursorAt(c,keys);return [q[1],q[2]]}); } else $('rip').style.opacity=0;
+
+  // fly packet
+  document.querySelectorAll('.flydot').forEach((d,i)=>{
+    const a=TL.fly[0]+i*.06, p=ramp(t,a,TL.fly[1]+i*.03);
+    if(t<a||p>=1){d.style.opacity=0;return;}
+    const e=eio(p), x0=R.res.x,y0=R.res.y,x1=R.nav.x,y1=R.nav.y, cx=(x0+x1)/2+(i-2)*30, cy=Math.min(y0,y1)-60;
+    const x=(1-e)*(1-e)*x0+2*(1-e)*e*cx+e*e*x1, y=(1-e)*(1-e)*y0+2*(1-e)*e*cy+e*e*y1;
+    d.style.left=x+'px'; d.style.top=y+'px'; d.style.opacity=Math.sin(p*Math.PI)*.95+.05; d.style.transform=`scale(${1-.4*p})`;
+  });
+  const fc=$('fchip'), fp=ramp(t,TL.fly[0],TL.fly[1]);
+  if(t>=TL.fly[0]&&fp<1){const e=eio(fp); fc.style.left=lerp(R.res.x,R.nav.x,e)+'px'; fc.style.top=(lerp(R.res.y,R.nav.y,e)-40*Math.sin(e*Math.PI))+'px'; fc.style.opacity=Math.min(1,fp*6)*(1-ramp(fp,.85,1));} else fc.style.opacity=0;
+
+  // ---- outro
+  $('outro').style.opacity=ramp(t,20.9,21.3);
+  const lg=eback(ramp(t,TL.logo,TL.logo+.7));
+  $('ologo').style.opacity=cl(ramp(t,TL.logo,TL.logo+.4)); $('ologo').style.transform=`scale(${.86+.14*lg})`;
+  fadeUp($('otag'),21.9,22.4,99,99,20);
+  fadeUp($('omono'),22.6,23.1,99,99,14);
+}
+for(let i=0;i<5;i++){const d=document.createElement('div');d.className='flydot';$('cam').appendChild(d);}
+window.ready=(async()=>{await document.fonts.ready; await new Promise(r=>setTimeout(r,300)); measure(); setTime(0); return true;})();
+window.setTime=setTime;
+</script></body></html>

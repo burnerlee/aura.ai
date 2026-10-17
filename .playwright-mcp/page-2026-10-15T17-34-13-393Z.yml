@@ -1,0 +1,278 @@
+- generic [ref=f1e3]:
+  - banner [ref=f1e4]:
+    - link "Aura home" [ref=f1e5] [cursor=pointer]:
+      - /url: "#"
+      - generic [ref=f1e9]: aura.
+    - button "Open Interest DNA profile" [ref=f1e10] [cursor=pointer]:
+      - generic [ref=f1e15]:
+        - generic [ref=f1e16]: YOUR PROFILE
+        - strong [ref=f1e17]: Interest DNA · 4 themes
+      - generic [ref=f1e18]: VIEW
+    - generic [ref=f1e21]:
+      - button "Search the feed" [ref=f1e22] [cursor=pointer]
+      - button "Open pairwise preference" [ref=f1e26] [cursor=pointer]
+      - button "Create" [ref=f1e31] [cursor=pointer]
+      - button "Demo profile" [ref=f1e34] [cursor=pointer]: AM
+  - generic [ref=f1e35]:
+    - complementary [ref=f1e36]:
+      - generic [ref=f1e37]: YOUR SPACE
+      - navigation "Main navigation" [ref=f1e38]:
+        - button "For you" [ref=f1e39] [cursor=pointer]
+        - button "Discover" [ref=f1e45] [cursor=pointer]
+        - button "Collection" [ref=f1e50] [cursor=pointer]
+      - generic [ref=f1e55]:
+        - generic [ref=f1e56]: YOUR INTERESTS
+        - button "Chat with Aura" [ref=f1e57] [cursor=pointer]: +
+      - generic [ref=f1e58]:
+        - button "AI / ML" [ref=f1e59] [cursor=pointer]
+        - button "Cyberpunk" [ref=f1e62] [cursor=pointer]
+        - button "Space" [ref=f1e65] [cursor=pointer]
+        - button "Indie Pop" [ref=f1e68] [cursor=pointer]
+      - button "Make something A thought, a story, a link." [ref=f1e71] [cursor=pointer]:
+        - strong [ref=f1e74]: Make something
+        - generic [ref=f1e75]: A thought, a story, a link.
+      - generic [ref=f1e76]: A quieter corner of the internet.
+    - main [ref=f1e78]:
+      - generic [ref=f1e79]:
+        - generic [ref=f1e80]:
+          - generic [ref=f1e81]: PERSONALIZED FOR YOU
+          - heading "For you." [level=1] [ref=f1e83]
+          - paragraph [ref=f1e84]: A little less noise. A lot more you.
+        - generic [ref=f1e85]:
+          - button "Chat with Aura" [ref=f1e86] [cursor=pointer]
+          - generic [ref=f1e94]: 06 posts
+      - generic [ref=f1e95]:
+        - button "All signals" [ref=f1e96] [cursor=pointer]
+        - button "AI / ML" [ref=f1e97] [cursor=pointer]
+        - button "Cyberpunk" [ref=f1e99] [cursor=pointer]
+        - button "Space" [ref=f1e101] [cursor=pointer]
+        - button "Indie Pop" [ref=f1e103] [cursor=pointer]
+      - generic [ref=f1e105]:
+        - article [ref=f1e106]:
+          - generic [ref=f1e107]:
+            - generic [ref=f1e108]:
+              - generic [ref=f1e109]:
+                - generic [ref=f1e110]: AR
+                - generic [ref=f1e111]:
+                  - generic [ref=f1e112]:
+                    - text: Asha Rao
+                    - generic [ref=f1e113]: ✓
+                  - generic [ref=f1e114]: "@ashar · 42 min ago"
+              - button "Why this?" [ref=f1e115] [cursor=pointer]
+            - generic [ref=f1e119]: AI / ML
+            - heading [level=3] [ref=f1e122]:
+              - link "Small models, strange minds" [ref=f1e123] [cursor=pointer]:
+                - /url: https://thegradient.pub/
+            - generic [ref=f1e128]: What changes when intelligence is no longer one giant destination, but a thousand tiny tools running close to the work?
+            - link "Open original" [ref=f1e130] [cursor=pointer]:
+              - /url: https://thegradient.pub/
+            - generic [ref=f1e135]:
+              - generic "Profile match" [ref=f1e136]: 34% match
+              - generic [ref=f1e140]:
+                - generic [ref=f1e141]: "#machinelearning"
+                - generic [ref=f1e142]: "#systems"
+                - generic [ref=f1e143]: "#deeptech"
+            - generic [ref=f1e144]:
+              - generic [ref=f1e145]:
+                - generic [ref=f1e146]: "192"
+                - generic [ref=f1e149]: "31"
+                - button "More like this" [ref=f1e152] [cursor=pointer]
+              - generic [ref=f1e156]:
+                - button "Save to collection" [ref=f1e157] [cursor=pointer]
+                - button "Resonate with this post" [ref=f1e160] [cursor=pointer]:
+                  - generic [ref=f1e163]: Resonate
+                - button "Banish this post" [ref=f1e164] [cursor=pointer]
+        - article [ref=f1e167]:
+          - generic [ref=f1e168]:
+            - generic [ref=f1e169]:
+              - generic [ref=f1e170]:
+                - generic [ref=f1e171]: TG
+                - generic [ref=f1e172]:
+                  - generic [ref=f1e173]:
+                    - text: The Gradient
+                    - generic [ref=f1e174]: ✓
+                  - generic [ref=f1e175]: "@thegradient · 3 hrs ago"
+              - button "Why this?" [ref=f1e176] [cursor=pointer]
+            - generic [ref=f1e180]:
+              - generic [ref=f1e181]: AI / ML
+              - generic [ref=f1e183]: Substack
+            - heading [level=3] [ref=f1e187]:
+              - link "The hidden craft of building with language models" [ref=f1e188] [cursor=pointer]:
+                - /url: https://thegradient.pub/
+            - paragraph [ref=f1e193]: A field guide to the unglamorous work behind useful AI products.
+            - generic [ref=f1e194]:
+              - generic [ref=f1e195]: Substack · source
+              - link "Open original" [ref=f1e199] [cursor=pointer]:
+                - /url: https://thegradient.pub/
+            - generic [ref=f1e204]:
+              - generic "Profile match" [ref=f1e205]: 34% match
+              - generic [ref=f1e209]:
+                - generic [ref=f1e210]: "#Substack"
+                - generic [ref=f1e211]: "#languagemodels"
+                - generic [ref=f1e212]: "#product"
+            - generic [ref=f1e213]:
+              - generic [ref=f1e214]:
+                - generic [ref=f1e215]: "341"
+                - generic [ref=f1e218]: "27"
+                - button "More like this" [ref=f1e221] [cursor=pointer]
+              - generic [ref=f1e225]:
+                - button "Save to collection" [ref=f1e226] [cursor=pointer]
+                - button "Resonate with this post" [ref=f1e229] [cursor=pointer]:
+                  - generic [ref=f1e232]: Resonate
+                - button "Banish this post" [ref=f1e233] [cursor=pointer]
+        - article [ref=f1e236]:
+          - generic "Electric blue light over a night-time city" [ref=f1e237]:
+            - generic [ref=f1e238]:
+              - generic [ref=f1e239]: Cyberpunk
+              - button "Match insight" [ref=f1e241] [cursor=pointer]
+            - generic [ref=f1e246]: AFTER HOURS — 2049
+          - generic [ref=f1e247]:
+            - generic [ref=f1e249]:
+              - generic [ref=f1e250]: MT
+              - generic [ref=f1e251]:
+                - generic [ref=f1e252]:
+                  - text: Mika Tanaka
+                  - generic [ref=f1e253]: ✓
+                - generic [ref=f1e254]: "@mikatanaka · 18 min ago"
+            - heading "The city after the city" [level=3] [ref=f1e255]
+            - paragraph [ref=f1e256]: A quiet study of the places we build when the future gets here before we do.
+            - generic [ref=f1e257]:
+              - generic "Profile match" [ref=f1e258]: 30% match
+              - generic [ref=f1e262]:
+                - generic [ref=f1e263]: "#worldbuilding"
+                - generic [ref=f1e264]: "#neon"
+                - generic [ref=f1e265]: "#visualessay"
+            - generic [ref=f1e266]:
+              - generic [ref=f1e267]:
+                - generic [ref=f1e268]: "284"
+                - generic [ref=f1e271]: "18"
+                - button "More like this" [ref=f1e274] [cursor=pointer]
+              - generic [ref=f1e278]:
+                - button "Save to collection" [ref=f1e279] [cursor=pointer]
+                - button "Resonate with this post" [ref=f1e282] [cursor=pointer]:
+                  - generic [ref=f1e285]: Resonate
+                - button "Banish this post" [ref=f1e286] [cursor=pointer]
+        - article [ref=f1e289]:
+          - generic [ref=f1e290]:
+            - generic [ref=f1e291]:
+              - generic [ref=f1e292]:
+                - generic [ref=f1e293]: r/
+                - generic [ref=f1e294]:
+                  - generic [ref=f1e295]: r/worldbuilding
+                  - generic [ref=f1e296]: reddit.com · 4 hrs ago
+              - button "Why this?" [ref=f1e297] [cursor=pointer]
+            - generic [ref=f1e301]:
+              - generic [ref=f1e302]: Cyberpunk
+              - generic [ref=f1e304]: Reddit
+            - heading [level=3] [ref=f1e308]:
+              - link "What detail makes a fictional city feel lived in?" [ref=f1e309] [cursor=pointer]:
+                - /url: https://www.reddit.com/r/worldbuilding/
+            - paragraph [ref=f1e314]: The best answers are about what people repair, not what they invent.
+            - generic [ref=f1e315]:
+              - generic [ref=f1e316]: Reddit · source
+              - link "Open original" [ref=f1e320] [cursor=pointer]:
+                - /url: https://www.reddit.com/r/worldbuilding/
+            - generic [ref=f1e325]:
+              - generic "Profile match" [ref=f1e326]: 30% match
+              - generic [ref=f1e330]:
+                - generic [ref=f1e331]: "#Reddit"
+                - generic [ref=f1e332]: "#worldbuilding"
+            - generic [ref=f1e333]:
+              - generic [ref=f1e334]:
+                - generic [ref=f1e335]: "176"
+                - generic [ref=f1e338]: "64"
+                - button "More like this" [ref=f1e341] [cursor=pointer]
+              - generic [ref=f1e345]:
+                - button "Save to collection" [ref=f1e346] [cursor=pointer]
+                - button "Resonate with this post" [ref=f1e349] [cursor=pointer]:
+                  - generic [ref=f1e352]: Resonate
+                - button "Banish this post" [ref=f1e353] [cursor=pointer]
+        - article [ref=f1e356]:
+          - generic "A bright nebula against deep space" [ref=f1e357]:
+            - generic [ref=f1e358]:
+              - generic [ref=f1e359]: Space
+              - button "Match insight" [ref=f1e361] [cursor=pointer]
+            - generic [ref=f1e366]: FIELD NOTES / 04
+          - generic [ref=f1e367]:
+            - generic [ref=f1e369]:
+              - generic [ref=f1e370]: "ON"
+              - generic [ref=f1e371]:
+                - generic [ref=f1e372]: Orbit Notes
+                - generic [ref=f1e373]: "@orbitnotes · 1 hr ago"
+            - heading "A map of the invisible" [level=3] [ref=f1e374]
+            - paragraph [ref=f1e375]: Researchers have found a way to trace the cold gas that quietly feeds a newborn star.
+            - generic [ref=f1e376]:
+              - generic "Profile match" [ref=f1e377]: 22% match
+              - generic [ref=f1e381]:
+                - generic [ref=f1e382]: "#astrophysics"
+                - generic [ref=f1e383]: "#stellarnurseries"
+            - generic [ref=f1e384]:
+              - generic [ref=f1e385]:
+                - generic [ref=f1e386]: "508"
+                - generic [ref=f1e389]: "42"
+                - button "More like this" [ref=f1e392] [cursor=pointer]
+              - generic [ref=f1e396]:
+                - button "Save to collection" [ref=f1e397] [cursor=pointer]
+                - button "Resonate with this post" [ref=f1e400] [cursor=pointer]:
+                  - generic [ref=f1e403]: Resonate
+                - button "Banish this post" [ref=f1e404] [cursor=pointer]
+        - article [ref=f1e407]:
+          - generic [ref=f1e408]:
+            - generic [ref=f1e409]:
+              - generic [ref=f1e410]:
+                - generic [ref=f1e411]: SK
+                - generic [ref=f1e412]:
+                  - generic [ref=f1e413]: Sora Kim
+                  - generic [ref=f1e414]: "@sorakim · 2 hrs ago"
+              - button "Why this?" [ref=f1e415] [cursor=pointer]
+            - generic [ref=f1e419]: Indie Pop
+            - paragraph [ref=f1e422]: A good interface feels like a small band playing in time. The best ones know when to leave space.
+            - generic [ref=f1e423]:
+              - generic "Profile match" [ref=f1e424]: 14% match
+              - generic [ref=f1e428]:
+                - generic [ref=f1e429]: "#design"
+                - generic [ref=f1e430]: "#creative"
+            - generic [ref=f1e431]:
+              - generic [ref=f1e432]:
+                - generic [ref=f1e433]: "96"
+                - generic [ref=f1e436]: "12"
+                - button "More like this" [ref=f1e439] [cursor=pointer]
+              - generic [ref=f1e443]:
+                - button "Save to collection" [ref=f1e444] [cursor=pointer]
+                - button "Resonate with this post" [ref=f1e447] [cursor=pointer]:
+                  - generic [ref=f1e450]: Resonate
+                - button "Banish this post" [ref=f1e451] [cursor=pointer]
+        - button "Keep following your curiosity. Explore more posts in your orbit." [ref=f1e454] [cursor=pointer]:
+          - generic [ref=f1e459]:
+            - strong [ref=f1e460]: Keep following your curiosity.
+            - generic [ref=f1e461]: Explore more posts in your orbit.
+  - dialog [ref=f1e464]:
+    - generic [ref=f1e465]:
+      - generic [ref=f1e470]:
+        - text: MEET AURA
+        - heading "Let’s find your signal." [level=2] [ref=f1e471]
+      - button "Close" [ref=f1e472] [cursor=pointer]
+    - generic [ref=f1e478]:
+      - generic [ref=f1e479]: Aura
+      - paragraph [ref=f1e480]: Hey — I'm Aura. I'll learn what you like through a quick chat, then shape your feed around it. What kinds of posts pull you in first?
+    - generic [ref=f1e481]:
+      - generic [ref=f1e482]:
+        - generic [ref=f1e483]: Themes
+        - button "+ AI / ML" [ref=f1e484] [cursor=pointer]
+        - button "+ Cyberpunk" [ref=f1e485] [cursor=pointer]
+        - button "+ Space" [ref=f1e486] [cursor=pointer]
+      - group "Quick replies" [ref=f1e487]:
+        - button "AI / ML" [ref=f1e488] [cursor=pointer]
+        - button "Cyberpunk" [ref=f1e489] [cursor=pointer]
+        - button "Space" [ref=f1e490] [cursor=pointer]
+        - button "Indie Pop" [ref=f1e491] [cursor=pointer]
+        - button "A mix — surprise me" [ref=f1e492] [cursor=pointer]
+        - button "Not sure yet — help me explore" [ref=f1e493] [cursor=pointer]
+      - generic [ref=f1e494]:
+        - generic [ref=f1e495]: Message Aura
+        - textbox "Message Aura" [active] [ref=f1e496]:
+          - /placeholder: Type a reply, or tap an option…
+        - button "Send" [disabled] [ref=f1e497]
+      - generic [ref=f1e498]:
+        - button "Maybe later" [ref=f1e499] [cursor=pointer]
+        - button "Apply to my feed" [disabled] [ref=f1e500]

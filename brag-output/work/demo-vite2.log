@@ -1,0 +1,29 @@
+
+  VITE v7.3.6  ready in 175 ms
+
+  ➜  Local:   http://localhost:5174/
+  ➜  Network: http://192.168.29.241:5174/
+6:53:55 pm [vite] (client) hmr update /src/AuraFeed.tsx
+6:53:59 pm [vite] (client) hmr update /src/AuraFeed.tsx, /src/index.css
+6:54:18 pm [vite] (client) hmr update /src/AuraFeed.tsx, /src/index.css
+6:55:11 pm [vite] (client) hmr update /src/AuraFeed.tsx, /src/index.css
+6:55:25 pm [vite] (client) hmr update /src/AuraFeed.tsx, /src/index.css
+6:55:26 pm [vite] (client) hmr update /src/AuraFeed.tsx, /src/index.css
+6:55:32 pm [vite] (client) hmr update /src/AuraFeed.tsx, /src/index.css
+6:55:40 pm [vite] (client) hmr update /src/AuraFeed.tsx, /src/index.css
+6:55:40 pm [vite] (client) hmr update /src/AuraFeed.tsx, /src/index.css
+6:55:41 pm [vite] (client) hmr update /src/AuraFeed.tsx, /src/index.css
+6:55:52 pm [vite] (client) hmr update /src/AuraFeed.tsx, /src/index.css
+6:56:02 pm [vite] (client) hmr update /src/AuraFeed.tsx, /src/index.css
+6:56:38 pm [vite] (client) hmr update /src/index.css
+6:56:49 pm [vite] (client) hmr update /src/glass.css, /src/index.css
+6:57:26 pm [vite] (client) hmr update /src/AuraFeed.tsx, /src/index.css
+6:57:42 pm [vite] (client) hmr update /src/index.css
+6:57:50 pm [vite] (client) hmr update /src/AuraFeed.tsx, /src/index.css
+6:57:51 pm [vite] (client) hmr update /src/AuraFeed.tsx, /src/index.css
+6:57:54 pm [vite] (client) hmr update /src/AuraFeed.tsx, /src/index.css
+6:58:09 pm [vite] (client) hmr update /src/AuraFeed.tsx, /src/index.css
+6:58:11 pm [vite] (client) hmr update /src/AuraFeed.tsx, /src/index.css
+6:58:25 pm [vite] (client) hmr update /src/AuraFeed.tsx, /src/index.css
+6:58:36 pm [vite] (client) hmr update /src/AuraFeed.tsx, /src/index.css
+6:58:38 pm [vite] (client) hmr update /src/AuraFeed.tsx, /src/index.css

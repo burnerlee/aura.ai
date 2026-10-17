@@ -1,0 +1,23 @@
+import { chromium } from '/Users/burnerlee/.npm/_npx/9833c18b2d85bc59/node_modules/playwright-core/index.mjs';
+import fs from 'fs';
+const out = process.argv[2];
+const b = await chromium.launch({ channel: 'chrome', headless: true });
+const p = await b.newPage({ viewport: { width: 1920, height: 1080 }, deviceScaleFactor: 1 });
+await p.goto('http://localhost:5174');
+await p.evaluate(() => localStorage.clear());
+await p.reload(); await p.waitForTimeout(1500);
+const css = await p.evaluate(() => [...document.querySelectorAll('style')].map(s => s.textContent).join('\n'));
+fs.writeFileSync(out + '/app.css', css);
+const grab = async (name) => { fs.writeFileSync(`${out}/${name}.html`, await p.evaluate(() => document.getElementById('root').innerHTML)); await p.screenshot({ path: `${out}/${name}.png` }); };
+await grab('chat0');
+const opt = async (txt) => { await p.locator('.aura-option-chip', { hasText: txt }).first().click(); await p.waitForTimeout(1500); };
+await opt('AI'); await grab('chat1');
+await opt('Deep, thoughtful'); await grab('chat2');
+await opt('Less hype'); await grab('chat3');
+await p.click('.aura-chat-actions .button-primary'); await p.waitForTimeout(1500); await grab('feed2');
+// profile popover
+await p.click('.glass-profile-trigger'); await p.waitForTimeout(800); await grab('dna');
+await p.click('.glass-profile-trigger'); await p.waitForTimeout(500);
+await p.locator('.resonate-button').first().click(); await p.waitForTimeout(300); await grab('resonate-mid');
+await p.waitForTimeout(700); await grab('resonate-hit');
+await b.close();

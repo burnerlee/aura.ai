@@ -1,0 +1,13 @@
+import { chromium } from '/Users/burnerlee/.npm/_npx/9833c18b2d85bc59/node_modules/playwright-core/index.mjs';
+const b = await chromium.launch({ channel: 'chrome', headless: true });
+const p = await b.newPage({ viewport: { width: 1920, height: 1080 } });
+await p.goto('http://localhost:5174'); await p.waitForTimeout(2000);
+const chips = await p.$$eval('.aura-option-chip', e=>e.map(x=>x.textContent)); console.log('chips',chips);
+await p.screenshot({ path: 'cap2/d0.png' });
+const opt = async (txt) => { await p.locator('.aura-option-chip', { hasText: txt }).first().click(); await p.waitForTimeout(1500); console.log(await p.$$eval('.aura-option-chip', e=>e.map(x=>x.textContent))); };
+await opt('AI'); await opt('Deep'); await opt('Less hype');
+await p.screenshot({ path: 'cap2/d1.png' });
+await p.click('.aura-chat-actions .button-primary'); await p.waitForTimeout(1500);
+await p.screenshot({ path: 'cap2/d2.png' });
+console.log(await p.$$eval('.post-card button', e=>[...new Set(e.map(x=>x.className+'|'+x.textContent.trim()))].slice(0,20)));
+await b.close();
