@@ -157,9 +157,13 @@ def observations_from_interactions(docs: Iterable[Mapping[str, Any]]) -> list[Ob
         snap = doc.get("snapshot")
         post_id = str(doc.get("post_id") or "")
         weight = doc.get("weight")
-        if not snap or not post_id or post_id in seen or not weight:
+        if not snap or not post_id or post_id in seen:
             continue
+        # Even a neutral/undo interaction should "win" and hide older reactions for
+        # this post, so toggling off a like/banish can actually remove evidence.
         seen.add(post_id)
+        if not weight:
+            continue
         positive = weight > 0
         out.append(
             Observation(

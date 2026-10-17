@@ -325,6 +325,59 @@ class UserProfileService:
         learns_dna = (
             bool(interaction.post_id) and bool(meta) and interaction.event in _DNA_EVENTS
         )
+
+        # Toggle semantics for explicit feedback:
+        # - Clicking "resonate" twice should undo it (same for banish).
+        #
+        # The UI currently always emits LIKE / NOT_INTERESTED, so the server is the
+        # source of truth for whether that reaction is being applied or removed.
+        toggled_off = False
+        if interaction.post_id and learns_dna:
+            if interaction.event == EventType.LIKE and interaction.post_id in profile.positive_ids:
+                # Undo a previous like: remove it from the positive set and apply the
+                # inverse theme delta. Record the interaction as neutral (weight=0)
+                # so it does not count as a positive/negative signal for mining.
+                self.ensure_dna(profile)
+                theme = self._post_theme(meta)
+                if theme is not None:
+                    scale = confidence_scale(True, interaction.match_percent)
+                    profile.dna = adjust_weight(
+                        profile.dna, theme[0], theme[1], -(weight * DNA_STEP * scale)
+                    )
+                profile.positive_ids = [pid for pid in profile.positive_ids if pid != interaction.post_id]
+                # Recompute state/centroids from the remaining positives (cheap window).
+                positives: list[list[float]] = []
+                for pid in profile.positive_ids[-50:]:
+                    vec = self._doc_vector(pid)
+                    if vec:
+                        positives.append(vec)
+                profile.state_vector = update_state(positives, liked=False)
+                profile.interest_centroids = (
+                    compute_centroids(positives, k=self.settings.interest_centroid_k)
+                    if positives
+                    else []
+                )
+                weight = 0.0
+                interaction.weight = 0.0
+                toggled_off = True
+            elif (
+                interaction.event == EventType.NOT_INTERESTED
+                and interaction.post_id in profile.negative_ids
+            ):
+                # Undo a previous banish: remove it from the negative set and apply
+                # the inverse theme delta; store as neutral for mining.
+                self.ensure_dna(profile)
+                theme = self._post_theme(meta)
+                if theme is not None:
+                    scale = confidence_scale(False, interaction.match_percent)
+                    profile.dna = adjust_weight(
+                        profile.dna, theme[0], theme[1], -(weight * DNA_STEP * scale)
+                    )
+                profile.negative_ids = [pid for pid in profile.negative_ids if pid != interaction.post_id]
+                weight = 0.0
+                interaction.weight = 0.0
+                toggled_off = True
+
         if learns_dna:
             theme = self._post_theme(meta)
             interaction.snapshot = build_snapshot(
@@ -355,7 +408,9 @@ class UserProfileService:
             if source and source not in profile.persona.muted_sources:
                 profile.persona.muted_sources.append(source)
 
-        profile.persona = apply_reason_actions(profile.persona, interaction)
+        # Undo toggles should not mutate persona fields via reason chips.
+        if not toggled_off:
+            profile.persona = apply_reason_actions(profile.persona, interaction)
 
         if interaction.reason == FeedbackReason.ALREADY_KNOW and interaction.post_id:
             if interaction.post_id not in profile.exclude_near_ids:
@@ -379,7 +434,8 @@ class UserProfileService:
                     positives, k=self.settings.interest_centroid_k
                 )
 
-        if interaction.post_id and is_explicit_negative(interaction):
+        # Negative_ids should only reflect active negative feedback (not an undo toggle).
+        if interaction.post_id and weight < 0 and is_explicit_negative(interaction):
             if interaction.post_id not in profile.negative_ids:
                 profile.negative_ids.append(interaction.post_id)
 
