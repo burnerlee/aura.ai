@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import logging
+import math
 import time
 from collections import defaultdict
 from typing import Any
@@ -14,6 +15,7 @@ import numpy as np
 from scraper.config import Settings, get_settings
 from scraper.llm.base import LLMClient
 from scraper.llm.factory import get_indexing_client, get_inference_client
+from scraper.models.document import EmbeddingStatus
 from scraper.query.rules import RELIABLE_POOL, match_percent, percentile_rank, rule_effect
 from scraper.query.scoring import mmr, negative_penalty, recency_decay, set_similarity
 from scraper.query.types import (
@@ -30,8 +32,31 @@ from scraper.storage.qdrant import QdrantVectorStore, point_id_for
 
 logger = logging.getLogger(__name__)
 
+# Below this relative match a post is not promoted just to balance sources.
+_DIVERSITY_MIN_PERCENT = 75
+
 
 class RecommendationEngine:
+    @staticmethod
+    def _cap_by_value(
+        ordered_ids: list[str],
+        values: dict[str, str | None],
+        *,
+        cap: int,
+    ) -> list[str]:
+        """Keep at most ``cap`` ids per value bucket, preserving order."""
+        if cap <= 0:
+            return ordered_ids
+        kept: list[str] = []
+        counts: dict[str, int] = defaultdict(int)
+        for pid in ordered_ids:
+            key = (values.get(pid) or "unknown").strip().lower()
+            if counts[key] >= cap:
+                continue
+            counts[key] += 1
+            kept.append(pid)
+        return kept
+
     def __init__(
         self,
         *,
@@ -46,6 +71,7 @@ class RecommendationEngine:
         self.store = store or MongoDocumentStore(self.settings)
         self._client = client
         self._inference = inference_client
+        self._sources_cache: tuple[float, list[str]] | None = None
 
     @property
     def client(self) -> LLMClient:
@@ -68,32 +94,53 @@ class RecommendationEngine:
         filter_k: int,
     ) -> dict[str, int]:
         hits: dict[str, int] = defaultdict(int)
-        filt = filters.to_dict() if filters else None
+        filt = filters.to_dict() if filters else {}
+        # A global ANN pass lets the closest source crowd out the rest before scoring
+        # ever sees them, so every source also gets its own (smaller) candidate pass.
+        passes: list[tuple[dict[str, Any], int]] = [(filt, filter_k)]
+        if not filt.get("sources"):
+            muted = set(filt.get("muted_sources") or [])
+            passes.extend(
+                ({**filt, "sources": [source]}, max(8, filter_k // 2))
+                for source in self._sources()
+                if source not in muted
+            )
         for qv in query_set.vectors:
             vector_name = "facet" if qv.kind == QueryKind.FACET else "doc"
-            try:
-                results = self.vectors.search(
-                    vector_name,
-                    qv.vector,
-                    k=filter_k,
-                    filt=filt,
-                    exclude_ids=exclude_ids,
-                )
-            except Exception as exc:  # noqa: BLE001
-                logger.warning("ANN search failed on %s: %s", vector_name, exc)
-                if vector_name != "doc":
+            for pass_filt, pass_k in passes:
+                try:
                     results = self.vectors.search(
-                        "doc",
+                        vector_name,
                         qv.vector,
-                        k=filter_k,
-                        filt=filt,
+                        k=pass_k,
+                        filt=pass_filt or None,
                         exclude_ids=exclude_ids,
                     )
-                else:
-                    raise
-            for point in results:
-                hits[str(point.id)] += 1
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning("ANN search failed on %s: %s", vector_name, exc)
+                    if vector_name != "doc":
+                        results = self.vectors.search(
+                            "doc",
+                            qv.vector,
+                            k=pass_k,
+                            filt=pass_filt or None,
+                            exclude_ids=exclude_ids,
+                        )
+                    else:
+                        raise
+                for point in results:
+                    hits[str(point.id)] += 1
         return dict(hits)
+
+    def _sources(self) -> list[str]:
+        """Sources with embedded posts (cached for a minute)."""
+        now = time.time()
+        if self._sources_cache is None or now - self._sources_cache[0] > 60:
+            sources = self.store.collection.distinct(
+                "source", {"embedding_status": EmbeddingStatus.READY.value}
+            )
+            self._sources_cache = (now, [s for s in sources if isinstance(s, str) and s])
+        return self._sources_cache[1]
 
     def recommend(
         self,
@@ -144,6 +191,13 @@ class RecommendationEngine:
             if isinstance(chunks[0], (int, float)):
                 chunks = [chunks]
             base = set_similarity(q_vecs, chunks, weights=q_weights, sigma="max")
+            doc_weight = self.settings.doc_similarity_weight
+            if doc is not None and doc_weight > 0:
+                # MaxSim alone favours long, diffuse posts (one of many chunks matches
+                # anything); the whole-post vector rewards being *about* the interest.
+                base = (1 - doc_weight) * base + doc_weight * set_similarity(
+                    q_vecs, [doc], weights=q_weights
+                )
             penalty = negative_penalty(
                 chunks,
                 negative_set or [],
@@ -161,7 +215,10 @@ class RecommendationEngine:
             effect = rule_effect(payload, rules)
             # ``fit`` is how well the post suits the user; recency only affects ordering.
             fit = base - penalty - effect.penalty + effect.boost
-            final = fit * decay
+            # Fits live in a band a few hundredths wide, so full multiplicative decay
+            # would rank by freshness, not interest; recency only nudges.
+            recency_weight = self.settings.recency_weight
+            final = fit * (1 - recency_weight + recency_weight * decay)
 
             # Per-query attribution for "why"
             attr: dict[str, float] = {}
@@ -206,9 +263,28 @@ class RecommendationEngine:
             for pid, fit in fits.items()
         }
 
+        ranked_ids = sorted(scores, key=lambda i: -scores[i])
+
+        # Source diversity: no source takes more than its share of the slate. If the
+        # other sources run dry, the best of the overflow backfills up to ``k``.
+        source_cap = max(1, math.ceil(max(int(k), 1) * self.settings.source_max_share))
+        capped = self._cap_by_value(
+            ranked_ids,
+            {pid: str(payloads[pid].get("source") or "unknown") for pid in ranked_ids},
+            cap=source_cap,
+        )
+        # A source only earns the slots the cap frees up with posts that actually fit.
+        capped = [
+            pid for pid in capped if (match_infos[pid].percent or 0) >= _DIVERSITY_MIN_PERCENT
+        ]
+        if len(capped) < k:
+            kept = set(capped)
+            capped += [pid for pid in ranked_ids if pid not in kept][: k - len(capped)]
+        ranked_ids = capped
+
         # Author diversity: keep at most N per author before MMR
         by_author: dict[str, list[str]] = defaultdict(list)
-        for pid in sorted(scores, key=lambda i: -scores[i]):
+        for pid in ranked_ids:
             author = (payloads[pid].get("author_name") or "unknown").lower()
             if len(by_author[author]) < self.settings.author_diversity_cap:
                 by_author[author].append(pid)
