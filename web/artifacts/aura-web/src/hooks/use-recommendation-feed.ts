@@ -2,7 +2,7 @@
  * Copyright (c) 2026 DevRev Inc. All rights reserved.
  */
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   chatWithAura,
@@ -93,6 +93,11 @@ function mapAuraResponse(res: AuraChatResponse): AuraTurn {
 
 export type PublishDraft = Omit<FeedPost, "id" | "publishedAt" | "likes" | "comments">;
 
+type LiveSearchResponse = {
+  results: FeedCard[];
+  imported: FeedCard[];
+};
+
 function cardsToPosts(cards: FeedCard[]): FeedPost[] {
   return cards.map((card) => mapApiFeedCardToPost(card));
 }
@@ -103,6 +108,17 @@ function whyMap(cards: FeedCard[]): Record<string, string> {
     if (card.why) out[card.id] = card.why;
   }
   return out;
+}
+
+function isLiveNewsIntent(text: string): boolean {
+  const q = text.trim().toLowerCase();
+  if (!q) return false;
+  // Very lightweight heuristic — tuned for “fetch latest” requests, not tuning.
+  if (/\b(latest|breaking|today|right now|just now|recent|update|updates)\b/.test(q)) return true;
+  if (/\bnews\b/.test(q)) return true;
+  if (/\bwhat happened\b/.test(q)) return true;
+  if (/\bheadline(s)?\b/.test(q)) return true;
+  return false;
 }
 
 export function useRecommendationFeed(demoPosts: FeedPost[]) {
@@ -116,6 +132,7 @@ export function useRecommendationFeed(demoPosts: FeedPost[]) {
   const [similarSeedId, setSimilarSeedId] = useState<string | null>(null);
   const [insight, setInsight] = useState<FeedbackInsight | null>(null);
   const dnaKey = useMemo(() => ["dna", userId] as const, [userId]);
+  const liveSearchGate = useRef<{ q: string; ts: number } | null>(null);
 
   // The server owns the Interest DNA; the UI only renders it.
   const dnaQuery = useQuery({
@@ -324,6 +341,46 @@ export function useRecommendationFeed(demoPosts: FeedPost[]) {
     ): Promise<AuraTurn> => {
       if (demo) {
         return localAuraTurn(messages, knownThemes);
+      }
+      const lastUser = [...messages].reverse().find((m) => m.role === "user")?.content ?? "";
+      // If the user is asking for realtime freshness, opportunistically discover/import now.
+      // This is a side-effect; the chat response still comes from the server.
+      if (isLiveNewsIntent(lastUser)) {
+        const now = Date.now();
+        const prev = liveSearchGate.current;
+        // De-dupe identical queries for a short window to avoid hammering Google News RSS.
+        if (prev && prev.q === lastUser.trim() && now - prev.ts < 45_000) {
+          // no-op
+        } else {
+          liveSearchGate.current = { q: lastUser.trim(), ts: now };
+        void (async () => {
+          try {
+            const res = await fetch("/api/search/live", {
+              method: "POST",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({
+                query: lastUser,
+                k: 10,
+                discover_k: 20,
+                max_age_hours: 24,
+                wait_for_embed: false,
+              }),
+            });
+            if (!res.ok) return;
+            const payload = (await res.json()) as LiveSearchResponse;
+            const cards = [...(payload.results ?? []), ...(payload.imported ?? [])];
+            if (!cards.length) return;
+            const posts = cardsToPosts(cards);
+            // Prepend into the feed immediately; duplicates are filtered by id downstream.
+            setLocalOverlay((current) => [...posts, ...current].slice(0, 60));
+            // Refresh server-backed tabs; embeddings will land asynchronously.
+            void queryClient.invalidateQueries({ queryKey: ["discover"] });
+            void queryClient.invalidateQueries({ queryKey: ["feed", userId] });
+          } catch {
+            // Best-effort: discovery is optional.
+          }
+        })();
+        }
       }
       const body: AuraChatRequest = {
         messages: messages.map((m) => ({ role: m.role, content: m.content })),

@@ -76,3 +76,24 @@ class DNAImportRequest(BaseModel):
     vector: dict[str, float] = Field(default_factory=dict)
     prompt: str = ""
     excluded_categories: list[str] = Field(default_factory=list)
+
+
+class ImportUrlRequest(BaseModel):
+    """Import (fetch) a URL on-demand so it can be embedded and recommended."""
+
+    url: str
+    # When true, embed synchronously before responding (use sparingly; slower).
+    wait_for_embed: bool = False
+
+
+class LiveSearchRequest(BaseModel):
+    """Realtime search: discover fresh links, import, and (optionally) embed."""
+
+    query: str
+    k: int = 10
+    # How many links to pull from Google News for this request (upper bound).
+    discover_k: int = 20
+    # Only consider "fresh" news; implemented as a Google query operator (when:Nh).
+    max_age_hours: int = 24
+    # When true, block to embed newly imported links before returning.
+    wait_for_embed: bool = False

@@ -28,12 +28,20 @@ from scraper.api.schemas import (
     AuraChatRequest,
     DNAImportRequest,
     EventsRequest,
+    ImportUrlRequest,
+    LiveSearchRequest,
     OnboardRequest,
     SearchRequest,
     TuneRequest,
 )
 from scraper.config import get_settings
 from scraper.embedding.worker import embed_by_ids
+from scraper.discovery.google_news_rss import (
+    fetch_google_news_items,
+    item_metadata,
+    with_resolved_publishers,
+)
+from scraper.imports.url_import import import_document_from_url, normalize_url
 from scraper.models.tag import TagKind
 from scraper.models.user import DNAPatch, EventType, Interaction
 from scraper.profile.aura import AuraChatMessage, AuraProfileDraft
@@ -122,6 +130,111 @@ def create_app(
         )
         return hydrate_results(store, results)
 
+    @app.post("/search/live")
+    def live_search(
+        body: LiveSearchRequest,
+        background_tasks: BackgroundTasks,
+    ) -> dict[str, Any]:
+        """Search with realtime discovery via Google News RSS.
+
+        Returns:
+          - results: embedded hits ranked by the vector engine (may be < k)
+          - imported: cards created or re-used from discovery (often pending)
+        """
+        query = (body.query or "").strip()
+        if not query:
+            raise HTTPException(status_code=400, detail="query is required")
+
+        # First, return whatever we already have embedded (fast path).
+        now = datetime.now(UTC).timestamp()
+        published_after = now - max(1, int(body.max_age_hours)) * 3600
+        base_filters = Filters(published_after=published_after)
+        initial = hydrate_results(store, engine.search(query, k=body.k, filters=base_filters))
+
+        if len(initial) >= body.k:
+            return {"results": initial, "imported": []}
+
+        # Discovery: fetch RSS, resolve to publisher URLs, then import into Mongo.
+        try:
+            rss_url, items = fetch_google_news_items(
+                query,
+                max_items=max(1, int(body.discover_k)),
+                max_age_hours=int(body.max_age_hours),
+                settings=store.settings,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+        resolved = with_resolved_publishers(items, settings=store.settings)
+        store.ensure_indexes()
+
+        imported_cards: list[FeedCard] = []
+        new_post_ids: list[str] = []
+        seen_urls: set[str] = set()
+        for item in resolved:
+            target = item.publisher_link or item.google_link
+            try:
+                url = normalize_url(target)
+            except ValueError:
+                continue
+            if url in seen_urls:
+                continue
+            seen_urls.add(url)
+
+            existing = store.collection.find_one(
+                {
+                    "$or": [
+                        {"url": url},
+                        {"canonical_url": url},
+                        {"embed_url": url},
+                        {"metadata.import_url": url},
+                        {"metadata.google_news.publisher_link": url},
+                        {"metadata.google_news.google_link": url},
+                    ]
+                }
+            )
+            if existing is not None:
+                imported_cards.append(mongo_to_card(existing))
+                continue
+
+            try:
+                doc = import_document_from_url(url, settings=store.settings)
+            except Exception:  # noqa: BLE001
+                # Best-effort: skip any item we can't import right now.
+                continue
+
+            # Enrich with RSS title + publish time when missing, and keep provenance.
+            if item.title and not doc.title:
+                doc.title = item.title
+            if item.published_at is not None and doc.published_at is None:
+                doc.published_at = item.published_at
+            doc.metadata = {
+                **(doc.metadata or {}),
+                **item_metadata(item, rss_url=rss_url, query=query),
+            }
+            if "News" not in doc.tags:
+                doc.tags = [*list(doc.tags or []), "News"]
+            raw = store.upsert(doc)
+            imported_cards.append(mongo_to_card(raw))
+            new_post_ids.append(str(raw["_id"]))
+
+        # Embed what we imported.
+        if new_post_ids:
+            if body.wait_for_embed:
+                embed_by_ids(new_post_ids, store=store)
+            else:
+                background_tasks.add_task(embed_by_ids, new_post_ids, store=store)
+
+        # If we waited, rerun search so results include the newly embedded docs.
+        if body.wait_for_embed and new_post_ids:
+            final = hydrate_results(store, engine.search(query, k=body.k, filters=base_filters))
+            return {"results": final, "imported": imported_cards}
+
+        # Otherwise: return initial embedded hits + newly-imported (pending) cards.
+        return {"results": initial, "imported": imported_cards}
+
     @app.get("/posts/{post_id}/similar")
     def similar(post_id: str, k: int = 10) -> list[FeedCard]:
         return hydrate_results(store, engine.similar(post_id, k=k))
@@ -171,6 +284,53 @@ def create_app(
         if store.get_by_id(post_id) is None:
             raise HTTPException(status_code=404, detail="Post not found")
         return embed_by_ids([post_id], store=store)
+
+    @app.post("/imports/url", response_model=CreatePostResponse)
+    def import_url(
+        body: ImportUrlRequest,
+        background_tasks: BackgroundTasks,
+    ) -> CreatePostResponse:
+        """Fetch a URL now and enqueue it for embedding (so it becomes recommendable)."""
+        try:
+            url = normalize_url(body.url)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+        # Dedupe: if already present, just return the existing card.
+        existing = store.collection.find_one(
+            {
+                "$or": [
+                    {"url": url},
+                    {"canonical_url": url},
+                    {"embed_url": url},
+                    {"metadata.import_url": url},
+                ]
+            }
+        )
+        if existing is not None:
+            return CreatePostResponse(post=mongo_to_card(existing))
+
+        try:
+            doc = import_document_from_url(url, settings=store.settings)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+        store.ensure_indexes()
+        raw = store.upsert(doc)
+        post_id = str(raw["_id"])
+        embedding_summary: dict[str, Any] | None = None
+
+        if body.wait_for_embed:
+            embedding_summary = maybe_embed_post(post_id, wait=True, store=store)
+            refreshed = get_card(store, post_id)
+            card = refreshed if refreshed is not None else mongo_to_card(raw)
+        else:
+            card = mongo_to_card(raw)
+            background_tasks.add_task(embed_by_ids, [post_id], store=store)
+
+        return CreatePostResponse(post=card, embedding_summary=embedding_summary)
 
     @app.get("/discover")
     def discover(
