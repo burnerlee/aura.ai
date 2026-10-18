@@ -1,0 +1,32 @@
+## Netlify deployment for Aura web UI (Vite static build).
+##
+## Key point: we proxy `/api/*` through Netlify to keep a single origin
+## (cookies + Google OAuth redirect URIs work reliably).
+##
+## Replace the backend origin below with your own domain (recommended) or VM IP.
+
+[build]
+  # Build from repo root (pnpm workspace).
+  command = "cd web && corepack enable && corepack prepare pnpm@10.10.0 --activate && pnpm install --no-frozen-lockfile && PORT=5173 BASE_PATH=/ pnpm --filter @workspace/aura-web build"
+  publish = "web/artifacts/aura-web/dist/public"
+
+[build.environment]
+  NODE_VERSION = "20"
+  # These are required because `web/artifacts/aura-web/vite.config.ts` hard-requires them,
+  # even for production builds.
+  PORT = "5173"
+  BASE_PATH = "/"
+
+# Proxy API requests to the backend (nginx/BFF on the VM).
+[[redirects]]
+  from = "/api/*"
+  to = "http://34.14.185.173/api/:splat"
+  status = 200
+  force = true
+
+# SPA fallback for client-side routing.
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
+
