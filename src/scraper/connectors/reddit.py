@@ -212,17 +212,70 @@ class RedditConnector(BaseConnector):
             )
         return out
 
-    @retry(
-        stop=stop_after_attempt(3),
-        wait=wait_exponential(multiplier=1, min=1, max=8),
-        reraise=True,
-    )
     def _fetch_rss(self, client: httpx.Client) -> str:
         url = f"{REDDIT_BASE}/r/{self.subreddit}/.rss"
-        logger.debug("GET %s", url)
-        resp = client.get(url, params={"raw_json": 1})
-        resp.raise_for_status()
-        return resp.text
+        # Reddit will rate-limit RSS scraping with HTTP 429. Tenacity retries can
+        # unintentionally amplify the problem unless we back off hard here.
+        max_attempts = 8
+        last_exc: Exception | None = None
+        for attempt in range(1, max_attempts + 1):
+            self._throttle()
+            try:
+                logger.debug("GET %s", url)
+                resp = client.get(url, params={"raw_json": 1})
+                if resp.status_code == 429:
+                    retry_after = (resp.headers.get("Retry-After") or "").strip()
+                    try:
+                        delay = float(retry_after) if retry_after else None
+                    except ValueError:
+                        delay = None
+                    backoff = min(60.0, 2.0**attempt)
+                    sleep_s = max(5.0, delay or backoff)
+                    logger.warning(
+                        "Reddit RSS rate-limited (429) for r/%s; sleeping %.1fs (attempt %s/%s)",
+                        self.subreddit,
+                        sleep_s,
+                        attempt,
+                        max_attempts,
+                    )
+                    time.sleep(sleep_s)
+                    continue
+
+                resp.raise_for_status()
+                return resp.text
+            except httpx.HTTPStatusError as exc:
+                last_exc = exc
+                code = exc.response.status_code if exc.response is not None else None
+                if code in {500, 502, 503, 504}:
+                    sleep_s = min(30.0, 2.0**attempt)
+                    logger.warning(
+                        "Reddit RSS transient HTTP %s for r/%s; sleeping %.1fs (attempt %s/%s)",
+                        code,
+                        self.subreddit,
+                        sleep_s,
+                        attempt,
+                        max_attempts,
+                    )
+                    time.sleep(sleep_s)
+                    continue
+                raise
+            except (httpx.TimeoutException, httpx.NetworkError) as exc:
+                last_exc = exc
+                sleep_s = min(30.0, 2.0**attempt)
+                logger.warning(
+                    "Reddit RSS network error for r/%s (%s); sleeping %.1fs (attempt %s/%s)",
+                    self.subreddit,
+                    type(exc).__name__,
+                    sleep_s,
+                    attempt,
+                    max_attempts,
+                )
+                time.sleep(sleep_s)
+                continue
+
+        if last_exc is not None:
+            raise last_exc
+        raise RuntimeError(f"Failed to fetch reddit RSS after {max_attempts} attempts: {url}")
 
     @retry(
         stop=stop_after_attempt(3),
