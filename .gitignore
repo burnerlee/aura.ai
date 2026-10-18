@@ -24,8 +24,12 @@ htmlcov/
 
 # Local data dumps
 data/
+dumps/
 *.jsonl
 !scripts/**
 
 # Node / pnpm (workspace-local store can be created during installs)
 .pnpm-store/
+
+# Git worktrees used for deploy/build experiments
+.worktrees/
