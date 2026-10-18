@@ -166,7 +166,7 @@ export function ProfileView({
             {!!vibes.length && (<><h3>Reading vibe</h3><Chips items={vibes}/></>)}
           </section>
 
-          <section className="profile-card">
+          <section className="profile-card profile-interest-dna">
             <div className="profile-card-head"><span className="eyebrow">INTEREST DNA</span></div>
             {themes.length ? (
               <div className="profile-bars">

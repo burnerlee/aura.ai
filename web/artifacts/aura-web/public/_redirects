@@ -1,0 +1,9 @@
+# Netlify redirects file (must live in the published directory).
+# This file is copied by Vite from `public/` to `dist/public/`.
+
+# Proxy API through the VM backend (keeps same-origin for the browser).
+/api/*  http://34.14.185.173/api/:splat  200!
+
+# SPA fallback: any non-file route should serve the app shell.
+/*      /index.html                       200
+
